@@ -20,6 +20,7 @@ class ToggleTile(Gtk.EventBox):
                  color=(0.039, 0.518, 1.0), size: int = 46, icon_off: str | None = None) -> None:
         super().__init__()
         self.set_visible_window(False)
+        self.set_above_child(True)  # the whole tile (disc and label) takes the clicks
         self.icon = icon
         self.icon_off = icon_off or icon
         self.color = (*color, 1.0) if len(color) == 3 else color

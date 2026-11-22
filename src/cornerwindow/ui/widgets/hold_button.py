@@ -20,6 +20,7 @@ class HoldButton(Gtk.EventBox):
                  color=(1.0, 0.271, 0.227), size: int = 40) -> None:
         super().__init__()
         self.set_visible_window(False)
+        self.set_above_child(True)  # the whole button (disc and label) takes the clicks
         self.icon = icon
         self.on_confirm = on_confirm
         self.hold = hold_ms / 1000.0
