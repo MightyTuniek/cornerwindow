@@ -50,17 +50,28 @@ def test_layering(tmp_path):
     assert len(cfg.sources) == 3
 
 
-def test_shipped_configs_parse_and_your_machine_matches():
-    cfg = config.load({"hostname": "my-desktop", "monitor_models": ["Acer VG240Y"]},
+def test_shipped_configs_parse():
+    # defaults alone, with facts that match no machine file
+    cfg = config.load({"hostname": "no-such-host", "monitor_models": []},
                       REPO / "config", REPO / "nonexistent.toml")
     assert cfg.get("general.corner") == "top-right"
-    assert cfg.get("display.i2c_bus") == 4
-    presets = cfg.get("display.presets")
-    assert [p["name"] for p in presets] == ["Night", "Evening", "Day", "Movie"]
-    limits = cfg.get("display.limits")
-    # your presets must never exceed your own ceiling
-    assert all(p["brightness"] <= limits["brightness"] and p["contrast"] <= limits["contrast"] for p in presets)
+    assert [p["name"] for p in cfg.get("display.presets")] == ["Day", "Evening", "Night", "Movie"]
     assert all(isinstance(col, list) for col in cfg.get("modules.columns"))
+    # every local machine file (config/machines/*.toml, not tracked in git) parses and applies
+    for machine in sorted((REPO / "config" / "machines").glob("*.toml")):
+        match = config._read(machine).get("match", {})
+        hosts = match.get("hostname", [])
+        hosts = [hosts] if isinstance(hosts, str) else hosts
+        if not hosts:
+            continue
+        cfg = config.load({"hostname": hosts[0], "monitor_models": []},
+                          REPO / "config", REPO / "nonexistent.toml")
+        assert str(machine) in [str(s) for s in cfg.sources], machine
+        limits = cfg.get("display.limits") or {}
+        # presets must never exceed the machine's own ceiling
+        for p in cfg.get("display.presets"):
+            for key, ceiling in limits.items():
+                assert p.get(key, 0) <= ceiling, (machine.name, p["name"], key)
 
 
 # ── springs ──────────────────────────────────────────────────────────────────

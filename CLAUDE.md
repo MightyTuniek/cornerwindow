@@ -31,4 +31,4 @@ The app is single-instance over D-Bus (`io.github.cornerwindow`, `Gio.Applicatio
 
 ## Tests
 
-`tests/` covers pure logic only (config layering and TOML editing, springs/outline geometry, DDC packet encoding, wpctl/ddcutil parsers, calculator, timer parsing, module loading); there are no GUI tests. `test_shipped_configs_parse_and_your_machine_matches` parses every shipped config, so keep `config/machines/*.toml` valid when editing it.
+`tests/` covers pure logic only (config layering and TOML editing, springs/outline geometry, DDC packet encoding, wpctl/ddcutil parsers, calculator, timer parsing, module loading); there are no GUI tests. `test_shipped_configs_parse` parses the defaults and every machine file present, so keep `config/machines/*.toml` valid when editing it. Machine files are gitignored and stay local.
