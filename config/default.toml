@@ -1,0 +1,133 @@
+# CornerWindow defaults. Every option lives here, documented.
+#
+# Override any of it in ~/.config/cornerwindow/config.toml (only the keys you change),
+# or add a per-PC file in config/machines/ with a [match] table.
+# Tables merge; lists and values replace.
+
+[general]
+corner = "top-right"          # top-left | top-right | bottom-left | bottom-right
+monitor = "primary"           # "primary", a monitor index (0, 1…) or part of its model name
+open_on = "click"             # click | hover
+hover_open_delay_ms = 250     # only for open_on = "hover"
+close_on_focus_out = true     # clicking anywhere else closes the island
+close_on_leave_ms = 0         # >0: also close after the pointer has left for this long
+hide_when_fullscreen = true   # get out of the way of games and videos
+window_type = "utility"       # X11 window type: utility | dock (try dock if the WM misbehaves)
+
+[trigger]
+radius = 20                   # the quarter-circle at rest, px
+hover_radius = 26             # grows to this under the pointer
+# Gestures on the collapsed trigger, bound to named actions (`cornerwindow actions` lists them)
+scroll = "display.brightness.step"
+shift_scroll = "audio.volume.step"
+middle_click = "audio.mute"
+right_click = "media.play_pause"
+
+[panel]
+background = "#000000"
+column_width = 330
+spacing = 10
+padding = 14
+corner_radius = 28            # the inner corner of the open panel
+ears = 10                     # concave fillets where the panel meets the screen edges
+smoothing = 0.6               # 0 = circular corners, 0.6 = iOS-like continuous corners
+shadow = true
+
+[animation]
+# Springs use SwiftUI semantics: response = seconds, damping < 1 = a little bounce.
+open_response = 0.42
+open_damping = 0.78
+open_height_response = 0.5
+content_response = 0.55
+close_response = 0.30
+close_damping = 1.0
+content_out_response = 0.12
+hover_response = 0.25
+hover_damping = 0.9
+stagger = 0.11                # delay between cards as they pour out of the corner
+slow_motion = 1.0             # >1 slows every animation down (great for tuning)
+
+[modules]
+top = ["commandbar"]
+# Columns left -> right, cards top -> bottom. Any module id works anywhere.
+columns = [
+  ["display", "audio", "media", "glance"],
+  ["header", "toggles", "drawer", "power"],
+]
+drawer = ["timer", "clipboard", "notes"]
+search_paths = []             # extra folders with your own module .py files
+
+[display]
+backend = "auto"              # auto | ddc | ddcutil | backlight | gamma   (or a list, in order)
+# i2c_bus = 4                 # skip detection and talk to /dev/i2c-N directly
+step = 5                      # % per scroll notch
+refresh_on_open = true        # re-read values (in case you used the monitor's buttons)
+limits = {}                   # hard ceilings in %, e.g. { brightness = 30, contrast = 30 }; sliders span 0..limit
+
+[[display.presets]]
+name = "Day"
+brightness = 80
+contrast = 60
+night_light = false
+
+[[display.presets]]
+name = "Evening"
+brightness = 45
+contrast = 50
+night_light = true
+
+[[display.presets]]
+name = "Night"
+brightness = 15
+contrast = 45
+night_light = true
+
+[[display.presets]]
+name = "Movie"
+brightness = 60
+contrast = 70
+night_light = false
+
+[audio]
+backend = "auto"              # auto | wpctl | pactl
+step = 5
+max_volume = 100              # allow boosting by raising this (e.g. 150)
+show_mic_muted = true         # red dot on the trigger while the mic is muted
+names = {}                    # device name substring -> friendly name
+
+[toggles]
+items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine"]
+per_row = 4
+
+[glance]
+interval = 1.0
+cpu_sensor = "auto"           # or "chip/label", e.g. "k10temp/Tctl" (see `cornerwindow doctor`)
+gpu_sensor = "auto"
+disk_path = "/"
+
+[header]
+clock_format = "%H:%M"
+date_format = "%A, %-d %B"
+
+[drawer]
+height = 150
+
+[timer]
+presets = [1, 5, 15, 25, 45]
+
+[clipboard]
+size = 10
+persist = false               # keep history across restarts (stored in ~/.local/share/cornerwindow)
+
+[power]
+items = ["lock", "suspend", "reboot", "poweroff"]
+hold_ms = 600                 # hold this long to confirm
+lock_hold_ms = 250
+
+[weather]
+# Add "weather" to a column above, then set your location:
+# latitude = 52.23
+# longitude = 21.01
+# place = "Home"
+units = "metric"
+refresh_minutes = 15

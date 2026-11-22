@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cornerwindow"
+version = "0.1.0"
+description = "A hidden quarter-circle in your screen corner that morphs into a quick panel."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# PyGObject and pycairo come from the distro (python3-gi, python3-cairo); see install.sh.
+dependencies = []
+
+[project.scripts]
+cornerwindow = "cornerwindow.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cornerwindow = ["ui/style.css", "data/*.toml", "data/machines/*.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

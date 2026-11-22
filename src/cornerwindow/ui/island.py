@@ -1,0 +1,551 @@
+"""The island: one borderless, always-on-top, see-through window in a screen corner.
+
+Collapsed it shows only a small black quarter-circle. Click it and the same
+outline springs open into the panel; content pours out of the corner after it.
+
+Smoothness rules followed here:
+  * the window is never resized or moved while animating (it is pre-sized to the
+    largest the panel can get; everything outside the outline is transparent and
+    click-through via an input shape that tracks the outline every frame)
+  * all motion is spring physics driven by the frame clock, only while moving
+  * springs keep velocity, so interrupting open/close reverses fluidly
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Callable
+
+import cairo
+from gi.repository import Gdk, GLib, Gtk
+
+from ..core import log
+from ..core.activity import Activity, ActivityManager
+from ..core.actions import ActionRegistry
+from ..core.anim import Animator, Spring, clamp, lerp, progress
+from ..config import Config
+from ..platform.window.base import WindowBackend
+from . import shape
+from .content import CardGrid
+from .draw import text
+
+_log = log.get("island")
+OVERSHOOT_MARGIN = 44
+CORNER_ZONE = 34  # clicking the very corner of the open panel closes it
+
+
+class Island(Gtk.Window):
+    def __init__(self, config: Config, backend: WindowBackend, activity: ActivityManager,
+                 actions: ActionRegistry) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.config = config
+        self.backend = backend
+        self.activity = activity
+        self.actions = actions
+        self._read_config(config)
+        g, a = self.g, self.a
+
+        self.is_open = False
+        self.pinned = False
+        self.hovering = False
+        self.fullscreen_hidden = False
+        self.on_open_hooks: list[Callable[[], None]] = []
+        self.on_close_hooks: list[Callable[[], None]] = []
+        self.on_type: Callable[[str], bool] | None = None
+        self.on_escape: list[Callable[[], bool]] = []  # return True to swallow Esc
+        self.keep_open: list[Callable[[], bool]] = []  # e.g. "the settings window has focus"
+        self._opened_at = 0.0
+        self._leave_timer = 0
+        self._hover_timer = 0
+        self._scroll_accum = 0.0
+        self._last_region: tuple | None = None
+        self.panel_w = 400
+        self.panel_h = 400
+
+        # -- window setup ---------------------------------------------------------------
+        self.set_title("CornerWindow")
+        self.set_app_paintable(True)
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual is not None and screen.is_composited():
+            self.set_visual(visual)
+        else:
+            _log.warning("No compositor: transparency unavailable, the island will look boxy")
+        self.get_style_context().add_class("cw-window")
+        backend.configure(self, g.get("window_type", "utility"))
+
+        self.root = Gtk.EventBox()
+        self.root.set_visible_window(False)
+        self.root.set_above_child(True)  # collapsed: the trigger eats all input
+        self.root.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.SCROLL_MASK
+                             | Gdk.EventMask.SMOOTH_SCROLL_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
+                             | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.root.get_style_context().add_class("cw-root")
+        self.add(self.root)
+
+        self.grid: CardGrid | None = None
+        self.new_grid()
+
+        # -- springs --------------------------------------------------------------------
+        slow = float(a.get("slow_motion", 1.0))
+        self.w = Spring(self.rest_r, precision=0.05)
+        self.h = Spring(self.rest_r, precision=0.05)
+        self.content = Spring(0.0, precision=0.002)  # staggered card entrance 0..1
+        self.fade = Spring(0.0, precision=0.002)  # global content opacity
+        self.visible_amt = Spring(1.0, response=0.3, damping_fraction=1.0, precision=0.002)
+        self.glow = Spring(0.0, response=0.25, damping_fraction=1.0, precision=0.002)
+        self.anim = Animator(self, self._frame,
+                             [self.w, self.h, self.content, self.fade, self.visible_amt, self.glow],
+                             slow_motion=slow)
+
+        self.connect("draw", self._draw)
+        self.connect("key-press-event", self._key)
+        self.connect("focus-out-event", self._focus_out)
+        self.root.connect("button-press-event", self._button)
+        self.root.connect("scroll-event", self._scroll)
+        self.root.connect("enter-notify-event", self._enter)
+        self.root.connect("leave-notify-event", self._leave)
+        activity.on_change(self._activity_changed)
+        display = Gdk.Display.get_default()
+        display.connect("monitor-added", lambda *_: GLib.timeout_add(500, self._replace))
+        display.connect("monitor-removed", lambda *_: GLib.timeout_add(500, self._replace))
+
+    # == configuration ================================================================
+    def _read_config(self, config: Config) -> None:
+        self.config = config
+        g, t, p, a = (config.section(s) for s in ("general", "trigger", "panel", "animation"))
+        self.g, self.t, self.p, self.a = g, t, p, a
+        self.corner = g.get("corner", "top-right")
+        self.rest_r = float(t.get("radius", 20))
+        self.hover_r = float(t.get("hover_radius", 26))
+        self.pad = int(p.get("padding", 14))
+        self.panel_radius = float(p.get("corner_radius", 28))
+        self.ears = float(p.get("ears", 10))
+        self.smoothing = float(p.get("smoothing", 0.6))
+        self.bg = Gdk.RGBA()
+        if not self.bg.parse(str(p.get("background", "#000000"))):
+            self.bg.parse("#000000")
+
+    def new_grid(self) -> CardGrid:
+        """Replace the content grid (on startup and whenever the config changes)."""
+        if self.grid is not None:
+            self.root.remove(self.grid)
+            self.grid.destroy()
+        grid = CardGrid(self.corner, int(self.p.get("column_width", 330)), int(self.p.get("spacing", 10)),
+                        float(self.a.get("stagger", 0.11)))
+        grid.set_halign(Gtk.Align.END if self.corner.endswith("right") else Gtk.Align.START)
+        grid.set_valign(Gtk.Align.END if self.corner.startswith("bottom") else Gtk.Align.START)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(grid, f"set_margin_{side}")(self.pad)
+        grid.clip_path = self._clip_for_grid
+        grid.connect("size-allocate", self._grid_allocated)
+        self.root.add(grid)
+        self.grid = grid
+        return grid
+
+    def apply_config(self, config: Config) -> None:
+        """Re-read everything from config. The caller then fills new_grid() and calls relayout()."""
+        was_corner = self.corner
+        self._read_config(config)
+        self.anim.slow_motion = max(float(self.a.get("slow_motion", 1.0)), 0.05)
+        if self.corner != was_corner:
+            self._last_region = None
+        if not self.g.get("hide_when_fullscreen", True) and self.fullscreen_hidden:
+            self.fullscreen_hidden = False
+            self.visible_amt.to(1.0)
+
+    def relayout(self) -> None:
+        """After the grid was rebuilt: re-place the window and spring to the new size."""
+        self.place()
+        self._last_region = None
+        if self.is_open:
+            self.root.set_above_child(False)
+            self.content.snap(1.0)
+            self.fade.snap(1.0)
+            self.w.to(self.panel_w)
+            self.h.to(self.panel_h)
+        else:
+            self._retarget_collapsed()
+        self.anim.kick()
+        self.queue_draw()
+
+    def panel_rect(self) -> Gdk.Rectangle:
+        """Where the open panel sits on screen (for placing the settings window beside it)."""
+        geometry = self._monitor().get_geometry()
+        rect = Gdk.Rectangle()
+        rect.width, rect.height = int(self.panel_w), int(self.panel_h)
+        rect.x = geometry.x if self.corner.endswith("left") else geometry.x + geometry.width - rect.width
+        rect.y = geometry.y if self.corner.startswith("top") else geometry.y + geometry.height - rect.height
+        return rect
+
+    # == geometry ====================================================================
+    def _monitor(self) -> Gdk.Monitor:
+        display = Gdk.Display.get_default()
+        wanted = self.g.get("monitor", "primary")
+        if isinstance(wanted, int) and 0 <= wanted < display.get_n_monitors():
+            return display.get_monitor(wanted)
+        if isinstance(wanted, str) and wanted != "primary":
+            for i in range(display.get_n_monitors()):
+                mon = display.get_monitor(i)
+                if wanted.lower() in (mon.get_model() or "").lower():
+                    return mon
+        return display.get_primary_monitor() or display.get_monitor(0)
+
+    def place(self) -> None:
+        self.root.show_all()
+        # GTK3's preferred width already includes the grid's margins (the padding)
+        _min, natural = self.grid.get_preferred_width()
+        self.panel_w = natural
+        geometry = self._monitor().get_geometry()
+        self.win_w = self.panel_w + OVERSHOOT_MARGIN
+        self.win_h = geometry.height
+        self.max_panel_h = geometry.height - OVERSHOOT_MARGIN
+        self.backend.place(self, self.corner, geometry, self.win_w, self.win_h)
+        _log.debug("Placed %dx%d at %s of %dx%d", self.win_w, self.win_h, self.corner,
+                   geometry.width, geometry.height)
+
+    def _replace(self) -> bool:
+        self.place()
+        self._last_region = None
+        self._frame()
+        return False
+
+    def _grid_allocated(self, _grid, alloc) -> None:
+        height = min(alloc.height + 2 * self.pad, getattr(self, "max_panel_h", 2000))
+        if abs(height - self.panel_h) >= 1 and alloc.height > 1:
+            self.panel_h = height
+            if self.is_open:
+                self.h.to(height)
+                self.anim.kick()
+
+    # == state changes =================================================================
+    def toggle(self, time_: int = 0) -> None:
+        if self.is_open:
+            self.close()
+        else:
+            self.open(time_)
+
+    def open(self, time_: int = 0) -> None:
+        if self.is_open or self.fullscreen_hidden:
+            _log.debug("open ignored (open=%s, fullscreen_hidden=%s)", self.is_open, self.fullscreen_hidden)
+            return
+        _log.debug("open")
+        self.is_open = True
+        self._opened_at = time.monotonic()
+        self._cancel_timers()
+        for hook in list(self.on_open_hooks):
+            hook()
+        self.root.set_above_child(False)
+        self.grid.invalidate()
+        a = self.a
+        self.w.to(self.panel_w, a.get("open_response", 0.42), a.get("open_damping", 0.78))
+        self.h.to(self.panel_h, a.get("open_height_response", 0.5), a.get("open_damping", 0.78) + 0.04)
+        self.fade.to(1.0, 0.3, 1.0)
+        self.content.to(0.0)
+        self.backend.take_focus(self, time_)
+        self.anim.kick()
+
+    def close(self, reason: str = "") -> None:
+        if not self.is_open:
+            return
+        _log.debug("close %s", reason)
+        self.is_open = False
+        self.pinned = False
+        self._cancel_timers()
+        self.root.set_above_child(True)
+        self.backend.release_focus(self)
+        a = self.a
+        self.fade.to(0.0, a.get("content_out_response", 0.12), 1.0)
+        self.content.to(0.0, 0.3, 1.0)
+        target = self._collapsed_radius()
+        self.w.to(target, a.get("close_response", 0.3), a.get("close_damping", 1.0))
+        self.h.to(target, a.get("close_response", 0.3) * 1.08, a.get("close_damping", 1.0))
+        for hook in list(self.on_close_hooks):
+            hook()
+        self.anim.kick()
+
+    def set_pinned(self, pinned: bool) -> None:
+        self.pinned = pinned
+
+    def set_fullscreen_hidden(self, hidden: bool) -> None:
+        if not self.g.get("hide_when_fullscreen", True):
+            return
+        self.fullscreen_hidden = hidden
+        _log.debug("fullscreen app focused: %s", hidden)
+        if hidden and self.is_open:
+            self.close("fullscreen")
+        self.visible_amt.to(0.0 if hidden else 1.0)
+        self.anim.kick()
+
+    def _collapsed_radius(self) -> float:
+        radius = self.hover_r if self.hovering else self.rest_r
+        act = self.activity.current()
+        if act is not None:
+            auto = 38.0 if act.label else (31.0 if act.level is not None else 25.0)
+            radius = max(radius, act.radius or auto)
+        return radius
+
+    def _retarget_collapsed(self) -> None:
+        if self.is_open:
+            return
+        target = self._collapsed_radius()
+        resp, damp = self.a.get("hover_response", 0.25), self.a.get("hover_damping", 0.9)
+        if abs(self.w.target - target) > 0.01:
+            self.w.to(target, resp, damp)
+            self.h.to(target, resp, damp)
+        self.glow.to(1.0 if self.hovering else 0.0)
+        self.anim.kick()
+
+    def _activity_changed(self) -> None:
+        self._retarget_collapsed()
+        self.queue_draw()
+
+    # == frame =========================================================================
+    def openness(self) -> float:
+        return progress(self.w.value, max(self.rest_r, self.hover_r), self.panel_w)
+
+    def _frame(self) -> None:
+        opened = self.openness()
+        if self.is_open and self.content.target < 1.0 and opened > 0.18:
+            self.content.to(1.0, self.a.get("content_response", 0.55), 1.0)
+        self.grid.reveal = self.content.value
+        self.grid.opening = self.is_open
+        self.grid.alpha = self.fade.value * self.visible_amt.value
+        self.grid.live = (self.is_open and opened >= 0.999 and self.content.value >= 0.999
+                          and self.fade.value >= 0.999)
+        self._update_input_region()
+        self.queue_draw()
+
+    def _params(self) -> shape.ShapeParams:
+        w, h = self.w.value, self.h.value
+        opened = self.openness()
+        radius = lerp(min(w, h), self.panel_radius, clamp(opened * 1.6))
+        return shape.ShapeParams(w, h, radius, self.ears * opened, self.smoothing * clamp(opened * 2))
+
+    def _apply_corner(self, cr) -> None:
+        tx, ty, sx, sy = shape.corner_transform(self.corner, self.get_allocated_width(),
+                                                self.get_allocated_height())
+        cr.translate(tx, ty)
+        cr.scale(sx, sy)
+
+    def _clip_for_grid(self, cr) -> None:
+        matrix = cr.get_matrix()
+        alloc = self.grid.get_allocation()
+        cr.translate(-alloc.x, -alloc.y)
+        self._apply_corner(cr)
+        shape.draw(cr, shape.outline(self._params()))
+        cr.set_matrix(matrix)
+
+    def _draw(self, _widget, cr) -> bool:
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        vis = self.visible_amt.value
+        if vis <= 0.002:
+            return False
+        opened = self.openness()
+        params = self._params()
+        ops = shape.outline(params)
+
+        cr.save()
+        self._apply_corner(cr)
+        if opened > 0.02 and self.p.get("shadow", True):
+            shape.draw(cr, ops)
+            for width, alpha in ((26, 0.035), (14, 0.06), (6, 0.09)):
+                cr.set_line_width(width)
+                cr.set_source_rgba(0, 0, 0, alpha * opened * vis)
+                cr.stroke_preserve()
+            cr.new_path()
+        shape.draw(cr, ops)
+        cr.set_source_rgba(self.bg.red, self.bg.green, self.bg.blue, vis)
+        cr.fill_preserve()
+        rim = 0.09 * opened + 0.16 * self.glow.value * (1 - opened)
+        if rim > 0.005:
+            gradient = cairo.LinearGradient(0, 0, params.w, params.h)
+            gradient.add_color_stop_rgba(0.0, 1, 1, 1, 0.0)
+            gradient.add_color_stop_rgba(1.0, 1, 1, 1, rim * vis)
+            cr.set_source(gradient)
+            cr.set_line_width(1.0)
+            cr.stroke()
+        cr.new_path()
+
+        act = self.activity.current()
+        if act is not None and opened < 0.35:
+            self._draw_activity(cr, act, min(params.w, params.h), (1 - opened / 0.35) * vis)
+        cr.restore()
+        return False  # let GTK draw the content grid on top
+
+    def _draw_activity(self, cr, act: Activity, r: float, alpha: float) -> None:
+        import math
+
+        ring = r - 7.0
+        if act.level is not None and ring > 6:
+            gap = 0.16
+            cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            cr.set_line_width(2.6)
+            cr.set_source_rgba(1, 1, 1, 0.16 * alpha)
+            cr.arc(0, 0, ring, gap, math.pi / 2 - gap)
+            cr.stroke()
+            level = clamp(act.level)
+            if level > 0.005:
+                cr.set_source_rgba(*act.color, alpha)
+                cr.arc(0, 0, ring, gap, gap + (math.pi / 2 - 2 * gap) * level)
+                cr.stroke()
+        centre = r * 0.38
+        if act.dot:
+            cr.set_source_rgba(*act.color, alpha)
+            cr.arc(centre, centre, 3.2, 0, 2 * math.pi)
+            cr.fill()
+        if act.label and r > 26:
+            x, y = cr.user_to_device(centre, centre)
+            cr.save()
+            cr.identity_matrix()
+            size = 11 if len(act.label) <= 2 else 9
+            text(cr, self, act.label, x, y, size=size, weight=700, rgba=(1, 1, 1, alpha), align="center")
+            cr.restore()
+
+    def _update_input_region(self) -> None:
+        win_w, win_h = self.get_allocated_width(), self.get_allocated_height()
+        if self.visible_amt.target < 0.5:
+            rects: list[tuple[int, int, int, int]] = []
+        elif not self.is_open and self.openness() < 0.05:
+            radius = (self.hover_r if self.hovering else self.rest_r) + 4
+            radius = max(radius, self.w.value + 2)
+            rects = shape.quarter_circle_rows(radius)
+        else:
+            rects = [(0, 0, int(self.w.value + 1), int(self.h.value + 1))]
+        key = (tuple(rects), win_w, win_h)
+        if key == self._last_region:
+            return
+        self._last_region = key
+        right, bottom = self.corner.endswith("right"), self.corner.startswith("bottom")
+        mapped = []
+        for x, y, w, h in rects:
+            wx = win_w - x - w if right else x
+            wy = win_h - y - h if bottom else y
+            mapped.append(cairo.RectangleInt(int(wx), int(wy), int(w), int(h)))
+        self.input_shape_combine_region(cairo.Region(mapped))
+
+    # == input =========================================================================
+    def _canonical(self, x: float, y: float) -> tuple[float, float]:
+        cx = self.get_allocated_width() - x if self.corner.endswith("right") else x
+        cy = self.get_allocated_height() - y if self.corner.startswith("bottom") else y
+        return cx, cy
+
+    def _button(self, _w, event) -> bool:
+        if event.type != Gdk.EventType.BUTTON_PRESS:
+            return True
+        if not self.is_open:
+            if event.button == 1:
+                self.open(event.time)
+            elif event.button == 2:
+                self.actions.run(self.t.get("middle_click"))
+            elif event.button == 3:
+                self.actions.run(self.t.get("right_click"))
+            return True
+        cx, cy = self._canonical(event.x, event.y)
+        if cx < CORNER_ZONE and cy < CORNER_ZONE:
+            self.close()
+            return True
+        return False
+
+    def _scroll(self, _w, event) -> bool:
+        if self.is_open:
+            return False
+        shift = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
+        name = self.t.get("shift_scroll" if shift else "scroll")
+        if event.direction == Gdk.ScrollDirection.SMOOTH:
+            _ok, dx, dy = event.get_scroll_deltas()
+            self._scroll_accum += -dy if abs(dy) >= abs(dx) else dx
+            steps = int(self._scroll_accum)
+            if not steps:
+                return True
+            self._scroll_accum -= steps
+        elif event.direction in (Gdk.ScrollDirection.UP, Gdk.ScrollDirection.RIGHT):
+            steps = 1
+        else:
+            steps = -1
+        self.actions.run(name, delta=steps)
+        return True
+
+    def _enter(self, _w, event) -> bool:
+        if event.detail == Gdk.NotifyType.INFERIOR:
+            return False
+        self.hovering = True
+        if self._leave_timer:
+            GLib.source_remove(self._leave_timer)
+            self._leave_timer = 0
+        if not self.is_open:
+            self._retarget_collapsed()
+            if self.g.get("open_on", "click") == "hover" and not self._hover_timer:
+                self._hover_timer = GLib.timeout_add(int(self.g.get("hover_open_delay_ms", 250)),
+                                                     self._hover_open)
+        return False
+
+    def _hover_open(self) -> bool:
+        self._hover_timer = 0
+        if self.hovering:
+            self.open(0)
+        return False
+
+    def _leave(self, _w, event) -> bool:
+        if event.detail == Gdk.NotifyType.INFERIOR:
+            return False
+        self.hovering = False
+        if self._hover_timer:
+            GLib.source_remove(self._hover_timer)
+            self._hover_timer = 0
+        if not self.is_open:
+            self._retarget_collapsed()
+            return False
+        delay = int(self.g.get("close_on_leave_ms", 0))
+        if delay > 0 and not self.pinned and not self._typing():
+            self._leave_timer = GLib.timeout_add(delay, self._leave_close)
+        return False
+
+    def _leave_close(self) -> bool:
+        self._leave_timer = 0
+        if not self.hovering and not self.pinned and not self._typing():
+            self.close()
+        return False
+
+    def _typing(self) -> bool:
+        focus = self.get_focus()
+        return isinstance(focus, (Gtk.Entry, Gtk.TextView))
+
+    def _cancel_timers(self) -> None:
+        for attr in ("_leave_timer", "_hover_timer"):
+            source = getattr(self, attr)
+            if source:
+                GLib.source_remove(source)
+                setattr(self, attr, 0)
+
+    def _key(self, _w, event) -> bool:
+        if not self.is_open:
+            return False
+        if event.keyval == Gdk.KEY_Escape:
+            if not any(hook() for hook in list(self.on_escape)):
+                self.close()
+            return True
+        if self._typing():
+            return False
+        char = chr(Gdk.keyval_to_unicode(event.keyval) or 0)
+        ctrl = event.state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK)
+        if char.isprintable() and char.strip() and not ctrl and self.on_type:
+            return self.on_type(char)
+        return False
+
+    def _focus_out(self, *_args) -> bool:
+        if not self.is_open or self.pinned or not self.g.get("close_on_focus_out", True):
+            return False
+        if time.monotonic() - self._opened_at < 0.35:
+            return False
+        GLib.timeout_add(60, self._focus_out_close)
+        return False
+
+    def _focus_out_close(self) -> bool:
+        if self.is_open and not self.is_active() and not self.pinned \
+                and not any(hook() for hook in list(self.keep_open)):
+            self.close("focus-out")
+        return False

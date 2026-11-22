@@ -1,0 +1,197 @@
+/* CornerWindow: pure black island, translucent cards, Apple-ish typography.
+   Everything is scoped under .cw-root so the host GTK theme never leaks in. */
+
+window.cw-window {
+  background-color: transparent;
+  background-image: none;
+}
+
+.cw-root,
+.cw-root * {
+  color: #f5f5f7;
+  font-family: "Inter", "SF Pro Text", "Cantarell", sans-serif;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  outline-color: transparent;
+}
+
+.cw-root { font-size: 13px; }
+.cw-root tooltip, tooltip.background { background-color: rgba(30, 30, 32, 0.96); border-radius: 8px; }
+
+/* ── cards ─────────────────────────────────────────── */
+.cw-card {
+  background-color: rgba(255, 255, 255, 0.072);
+  border-radius: 20px;
+  padding: 12px 12px;
+}
+.cw-card.cw-flat { background-color: transparent; padding: 2px 4px; }
+
+.cw-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.48);
+  letter-spacing: 0.3px;
+}
+.cw-dim { color: rgba(255, 255, 255, 0.55); }
+.cw-small { font-size: 11px; }
+.cw-num { font-feature-settings: "tnum"; }
+.cw-strong { font-weight: 600; }
+
+/* ── header ────────────────────────────────────────── */
+.cw-clock {
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  font-feature-settings: "tnum";
+}
+.cw-date { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.72); }
+
+/* ── buttons ───────────────────────────────────────── */
+.cw-root button {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  border-radius: 999px;
+  box-shadow: none;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  transition: background-color 120ms ease-out;
+}
+
+.cw-root button.cw-icon {
+  background-color: rgba(255, 255, 255, 0.09);
+  padding: 7px;
+}
+.cw-root button.cw-icon:hover { background-color: rgba(255, 255, 255, 0.17); }
+.cw-root button.cw-icon:active { background-color: rgba(255, 255, 255, 0.24); }
+.cw-root button.cw-icon.active { background-color: #f5f5f7; }
+.cw-root button.cw-icon.active image { color: #000; }
+.cw-root button.cw-icon.cw-plain { background-color: transparent; }
+.cw-root button.cw-icon.cw-plain:hover { background-color: rgba(255, 255, 255, 0.12); }
+.cw-root button.cw-icon.cw-big { padding: 9px; }
+
+.cw-root button.cw-chip {
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.cw-root button.cw-chip label { font-size: 12px; font-weight: 500; }
+.cw-root button.cw-chip:hover { background-color: rgba(255, 255, 255, 0.17); }
+.cw-root button.cw-chip:active { background-color: rgba(255, 255, 255, 0.24); }
+.cw-root button.cw-chip.active { background-color: #f5f5f7; }
+.cw-root button.cw-chip.active label { color: #000; }
+
+.cw-tile-label { font-size: 11px; color: rgba(255, 255, 255, 0.78); }
+
+/* ── segmented control (drawer tabs) ───────────────── */
+.cw-segments { background-color: rgba(255, 255, 255, 0.08); border-radius: 999px; padding: 3px; }
+.cw-root .cw-segments button { padding: 4px 12px; }
+.cw-root .cw-segments button label { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.7); }
+.cw-root .cw-segments button:hover { background-color: rgba(255, 255, 255, 0.08); }
+.cw-root .cw-segments button.active { background-color: rgba(255, 255, 255, 0.2); }
+.cw-root .cw-segments button.active label { color: #fff; }
+
+/* ── text input ────────────────────────────────────── */
+.cw-root entry {
+  background-color: rgba(255, 255, 255, 0.09);
+  background-image: none;
+  border: none;
+  border-radius: 14px;
+  box-shadow: none;
+  padding: 8px 12px;
+  min-height: 0;
+  caret-color: #0a84ff;
+  font-size: 14px;
+}
+.cw-root entry selection, .cw-root textview text selection { background-color: rgba(10, 132, 255, 0.55); }
+
+.cw-root textview, .cw-root textview text {
+  background-color: transparent;
+  font-size: 13px;
+  caret-color: #0a84ff;
+}
+.cw-notes { background-color: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 8px; }
+
+.cw-root scrolledwindow, .cw-root viewport { background-color: transparent; border: none; }
+.cw-root scrollbar { background-color: transparent; border: none; }
+.cw-root scrollbar slider { background-color: rgba(255, 255, 255, 0.25); min-width: 4px; border-radius: 4px; }
+
+/* ── lists (clipboard, command results) ────────────── */
+.cw-root button.cw-row {
+  border-radius: 10px;
+  padding: 6px 9px;
+}
+.cw-root button.cw-row:hover { background-color: rgba(255, 255, 255, 0.09); }
+.cw-root button.cw-row.active { background-color: rgba(10, 132, 255, 0.32); }
+
+/* ── media ─────────────────────────────────────────── */
+.cw-art { border-radius: 10px; }
+.cw-track { font-size: 13px; font-weight: 600; }
+.cw-artist { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+
+/* ── metrics ───────────────────────────────────────── */
+.cw-metric-value { font-size: 17px; font-weight: 600; font-feature-settings: "tnum"; }
+.cw-metric-sub { font-size: 11px; color: rgba(255, 255, 255, 0.5); font-feature-settings: "tnum"; }
+
+/* ── timer ─────────────────────────────────────────── */
+.cw-timer { font-size: 34px; font-weight: 300; letter-spacing: -0.5px; font-feature-settings: "tnum"; }
+
+/* ── settings window ───────────────────────────────── */
+.cw-settings-title { font-size: 17px; font-weight: 700; }
+.cw-setting-label { font-size: 13px; font-weight: 500; }
+.cw-badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+.cw-badge.yours { background-color: rgba(10, 132, 255, 0.28); color: #a8d1ff; }
+.cw-badge.machine { background-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.62); }
+.cw-root button.cw-nav { padding: 7px 10px; }
+.cw-root button.cw-nav label { font-size: 13px; color: rgba(255, 255, 255, 0.72); }
+.cw-root button.cw-nav.active { background-color: rgba(255, 255, 255, 0.13); }
+.cw-root button.cw-nav.active label { color: #fff; }
+
+.cw-settings switch {
+  background-color: rgba(255, 255, 255, 0.16);
+  background-image: none;
+  border: none;
+  border-radius: 999px;
+  box-shadow: none;
+  min-width: 42px;
+  min-height: 24px;
+  transition: background-color 160ms ease-out;
+}
+.cw-settings switch:checked { background-color: #30d158; }
+.cw-settings switch slider {
+  background-color: #fff;
+  background-image: none;
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  min-width: 20px;
+  min-height: 20px;
+  margin: 2px;
+}
+.cw-settings switch image { color: transparent; }
+
+.cw-settings spinbutton {
+  background-color: rgba(255, 255, 255, 0.09);
+  background-image: none;
+  border: none;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.cw-settings spinbutton entry { background-color: transparent; padding: 4px 8px; border-radius: 10px; }
+.cw-settings spinbutton button { padding: 2px 6px; border-radius: 8px; }
+.cw-settings spinbutton button:hover { background-color: rgba(255, 255, 255, 0.12); }
+.cw-settings entry { padding: 5px 9px; border-radius: 10px; font-size: 13px; }
+.cw-settings entry.cw-error { box-shadow: inset 0 0 0 1px #ff453a; }
+.cw-settings combobox button, .cw-settings colorbutton, .cw-settings button.color {
+  background-color: rgba(255, 255, 255, 0.09);
+  background-image: none;
+  border: none;
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 4px 10px;
+}
+.cw-settings combobox button:hover { background-color: rgba(255, 255, 255, 0.15); }
+
+.cw-settings entry.cw-compact { padding: 4px 2px; min-width: 0; }
