@@ -70,7 +70,9 @@ The script:
 - On GNOME, binds <kbd>Super</kbd>+<kbd>\\</kbd> to open and close it.
 - Runs `cornerwindow doctor` at the end.
 
-Flags: `--no-sudo`, `--no-hotkey`, `--uninstall`.
+Flags: `--no-sudo`, `--no-hotkey`.
+
+To update, pull the repo and run `./install.sh` again. To remove CornerWindow, run `./uninstall.sh`. It stops the app and removes the launcher, autostart entry, hotkey, udev rule and build cache, and keeps your settings. Add `--purge` to delete those too.
 
 ## Command line
 

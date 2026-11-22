@@ -4,7 +4,7 @@
 #   ./install.sh               everything (asks for sudo once, for packages + the I²C rule)
 #   ./install.sh --no-sudo     skip everything that needs root
 #   ./install.sh --no-hotkey   don't register the global shortcut
-#   ./install.sh --uninstall   remove launcher, autostart, hotkey and the udev rule
+#   ./install.sh --uninstall   same as ./uninstall.sh (see it for --purge)
 #
 # Safe to re-run.
 set -euo pipefail
@@ -39,27 +39,9 @@ has_gnome_keys() {
 
 # ── uninstall ────────────────────────────────────────────────────────────────
 if [ "$UNINSTALL" = 1 ]; then
-  say "Removing CornerWindow integration"
-  gdbus call --session --dest io.github.cornerwindow --object-path /io/github/cornerwindow \
-    --method org.gtk.Actions.Activate quit [] {} >/dev/null 2>&1 || true
-  rm -f "$BIN" "$AUTOSTART" && ok "launcher and autostart removed"
-  if has_gnome_keys; then
-    python3 - "$KB_PATH" <<'PY'
-import ast, subprocess, sys
-path = sys.argv[1]
-key = "org.gnome.settings-daemon.plugins.media-keys"
-current = ast.literal_eval(subprocess.check_output(["gsettings", "get", key, "custom-keybindings"], text=True).replace("@as ", ""))
-if path in current:
-    current.remove(path)
-    subprocess.run(["gsettings", "set", key, "custom-keybindings", str(current)], check=True)
-PY
-    ok "hotkey removed"
-  fi
-  if [ "$USE_SUDO" = 1 ] && { [ -f "$UDEV_RULE" ] || [ -f "$MODULES_LOAD" ]; }; then
-    sudo rm -f "$UDEV_RULE" "$MODULES_LOAD" && sudo udevadm control --reload-rules && ok "udev rule removed"
-  fi
-  echo "Your settings in ~/.config/cornerwindow and data in ~/.local/share/cornerwindow were kept."
-  exit 0
+  args=()
+  [ "$USE_SUDO" = 0 ] && args+=(--no-sudo)
+  exec "$REPO/uninstall.sh" "${args[@]}"
 fi
 
 # ── 1. dependencies ──────────────────────────────────────────────────────────
