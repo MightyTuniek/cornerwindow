@@ -170,7 +170,10 @@ class PillSlider(Gtk.DrawingArea):
         cr.fill()
 
         fill_w = clamp(self.shown.value) * (w - h) + h if self.shown.value > 0.001 else 0.0
-        if stretch > 0:
+        # Only cover the stretched pill when rubber-banding past the top end. The stretch
+        # spring is bouncy, so springing back from the bottom end briefly overshoots
+        # positive and must not paint a full fill.
+        if stretch > 0 and self.shown.value >= 0.999:
             fill_w = w
         ink_size = min(h * 0.5, 20)
         icon_x = x + h / 2 + 2
