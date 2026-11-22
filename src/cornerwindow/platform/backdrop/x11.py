@@ -9,6 +9,10 @@ what a compositor does, server side:
   * each one's off-screen contents come from XCompositeNameWindowPixmap (the
     compositor already redirects every top-level) and are composited OVER the
     wallpaper with XRender, so ARGB windows and client-side shadows look right
+  * windows that declare themselves opaque (_NET_WM_OPAQUE_REGION) are copied
+    with their alpha forced to 1 there, like Mutter does: Chromium/Electron leave
+    alpha undefined (often 0) in an ARGB window they call opaque, and compositing
+    that OVER would let the window below show through
   * the result is read back with XShmGetImage (~1 ms) straight into memory the
     glass kernel reads
   * XDamage on those windows plus SubstructureNotify on root tell us when
@@ -42,7 +46,8 @@ IsViewable = 2
 InputOnly = 2
 ZPixmap = 2
 TrueColor = 4
-PictOpSrc, PictOpOver = 1, 3
+PictOpSrc, PictOpOver, PictOpAdd = 1, 3, 12
+XA_CARDINAL = 6
 PictStandardARGB32 = 0
 XDamageReportBoundingBox = 2
 SubstructureNotifyMask = 1 << 19
@@ -73,6 +78,10 @@ class XImage(ctypes.Structure):
                 ("bytes_per_line", c_int), ("bits_per_pixel", c_int), ("red_mask", c_ulong),
                 ("green_mask", c_ulong), ("blue_mask", c_ulong), ("obdata", c_void_p),
                 ("f", XImageFuncs)]
+
+
+class XRenderColor(ctypes.Structure):
+    _fields_ = [("red", c_ushort), ("green", c_ushort), ("blue", c_ushort), ("alpha", c_ushort)]
 
 
 class XShmSegmentInfo(ctypes.Structure):
@@ -188,6 +197,10 @@ class _Lib:
         proto(x, "XPutImage", c_int, Display, c_ulong, c_void_p, POINTER(XImage), c_int, c_int,
               c_int, c_int, c_uint, c_uint)
         proto(x, "XSetErrorHandler", c_void_p, c_void_p)
+        proto(x, "XInternAtom", c_ulong, Display, c_char_p, c_int)
+        proto(x, "XGetWindowProperty", c_int, Display, Window, c_ulong, c_long, c_long, c_int, c_ulong,
+              POINTER(c_ulong), POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong),
+              POINTER(ctypes.POINTER(ctypes.c_ubyte)))
 
         proto(xc, "XCompositeQueryExtension", c_int, Display, POINTER(c_int), POINTER(c_int))
         proto(xc, "XCompositeNameWindowPixmap", Pixmap, Display, Window)
@@ -200,6 +213,8 @@ class _Lib:
         proto(xr, "XRenderFindStandardFormat", c_void_p, Display, c_int)
         proto(xr, "XRenderCreatePicture", Picture, Display, c_ulong, c_void_p, c_ulong, c_void_p)
         proto(xr, "XRenderFreePicture", None, Display, Picture)
+        proto(xr, "XRenderFillRectangle", None, Display, c_int, Picture, POINTER(XRenderColor),
+              c_int, c_int, c_uint, c_uint)
         proto(xr, "XRenderComposite", None, Display, c_int, Picture, Picture, Picture,
               c_int, c_int, c_int, c_int, c_int, c_int, c_uint, c_uint)
         proto(xe, "XShmQueryExtension", c_int, Display)
@@ -223,7 +238,8 @@ def destroy_image(image: POINTER(XImage)) -> None:
 
 
 class _Layer:
-    __slots__ = ("xid", "x", "y", "w", "h", "border", "visual", "pixmap", "picture", "damage", "ok")
+    __slots__ = ("xid", "x", "y", "w", "h", "border", "visual", "pixmap", "picture", "damage", "ok",
+                 "opaque")
 
     def __init__(self, xid: int) -> None:
         self.xid = xid
@@ -231,6 +247,7 @@ class _Layer:
         self.visual = None
         self.pixmap = self.picture = self.damage = 0
         self.ok = True
+        self.opaque: list[Rect] = []  # window-relative rectangles whose alpha is meaningless
 
     def rect(self) -> Rect:
         b = self.border * 2
@@ -302,6 +319,8 @@ class X11Backdrop:
             raise RuntimeError("no 32-bit visual")
         self.argb_visual = vinfo.visual
         self.argb = self.lib.xr.XRenderFindStandardFormat(self.dpy, PictStandardARGB32)
+        self.opaque_atom = x.XInternAtom(self.dpy, b"_NET_WM_OPAQUE_REGION", 0)
+        self._solid = XRenderColor(0, 0, 0, 0xFFFF)
         self._install_error_handler()
         x.XSelectInput(self.dpy, self.root, SubstructureNotifyMask)
         x.XFlush(self.dpy)
@@ -463,7 +482,29 @@ class X11Backdrop:
             layer.ok = False
             return False
         layer.picture = lib.xr.XRenderCreatePicture(dpy, layer.pixmap, fmt, 0, None)
+        layer.opaque = self._opaque_region(layer.xid)
         return bool(layer.picture)
+
+    def _opaque_region(self, xid: int) -> list[Rect]:
+        """The window's _NET_WM_OPAQUE_REGION as window-relative rectangles."""
+        x = self.lib.x
+        actual_type, actual_format = c_ulong(), c_int()
+        nitems, after = c_ulong(), c_ulong()
+        data = ctypes.POINTER(ctypes.c_ubyte)()
+        if x.XGetWindowProperty(self.dpy, xid, self.opaque_atom, 0, 4096, 0, XA_CARDINAL,
+                                byref(actual_type), byref(actual_format), byref(nitems), byref(after),
+                                byref(data)) != 0:
+            return []
+        try:
+            if actual_format.value != 32 or not data:
+                return []
+            values = ctypes.cast(data, POINTER(c_long))  # format-32 data is an array of C longs
+            n = nitems.value - nitems.value % 4
+            return [(values[i], values[i + 1], values[i + 2], values[i + 3]) for i in range(0, n, 4)
+                    if values[i + 2] > 0 and values[i + 3] > 0]
+        finally:
+            if data:
+                x.XFree(data)
 
     def _below(self, track: Track) -> list[_Layer]:
         """Viewable windows under the track's window, bottom to top, that touch its area."""
@@ -641,6 +682,16 @@ class X11Backdrop:
             px, py, pw, ph = part
             lib.xr.XRenderComposite(dpy, PictOpOver, layer.picture, 0, track.picture,
                                     px - layer.x, py - layer.y, 0, 0, px - x0, py - y0, pw, ph)
+            for ox, oy, ow, oh in layer.opaque:
+                solid = intersect((layer.x + ox, layer.y + oy, ow, oh), part)
+                if solid is None:
+                    continue
+                sx, sy, sw, sh = solid
+                # the colours are right, the alpha isn't: copy them, then saturate alpha
+                lib.xr.XRenderComposite(dpy, PictOpSrc, layer.picture, 0, track.picture,
+                                        sx - layer.x, sy - layer.y, 0, 0, sx - x0, sy - y0, sw, sh)
+                lib.xr.XRenderFillRectangle(dpy, PictOpAdd, track.picture, byref(self._solid),
+                                            sx - x0, sy - y0, sw, sh)
         if track.image is not None:
             img = track.image.contents
             img.width, img.height, img.bytes_per_line = w, h, w * 4
