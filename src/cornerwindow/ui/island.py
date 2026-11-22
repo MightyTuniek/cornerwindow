@@ -744,6 +744,7 @@ class Island(Gtk.Window):
 
     def _focus_out_close(self) -> bool:
         if self.is_open and not self.is_active() and not self.pinned \
+                and Gtk.grab_get_current() is None \
                 and not any(hook() for hook in list(self.keep_open)):
             self.close("focus-out")
         return False

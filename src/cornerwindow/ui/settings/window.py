@@ -444,6 +444,10 @@ class SettingsWindow(Gtk.Window):
 
     def _check_focus(self) -> bool:
         island = self.app.island
+        # An open dropdown/menu is its own popup window holding a GTK grab, so focus
+        # "leaves" this window while the user is still picking something in it.
+        if Gtk.grab_get_current() is not None:
+            return False
         if self.shown and not self.is_active() and not island.is_active() and not island.pinned:
             self.hide_animated()
             island.close("focus-out")
