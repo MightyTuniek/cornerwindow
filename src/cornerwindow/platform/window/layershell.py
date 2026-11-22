@@ -44,3 +44,6 @@ class LayerShellBackend(WindowBackend):
 
     def release_focus(self, window: Gtk.Window) -> None:
         GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
+
+    def raise_above(self, window: Gtk.Window) -> None:
+        pass  # the overlay layer is already above fullscreen windows

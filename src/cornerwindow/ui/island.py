@@ -272,7 +272,7 @@ class Island(Gtk.Window):
         self.anim.slow_motion = max(float(self.a.get("slow_motion", 1.0)), 0.05)
         if self.corner != was_corner:
             self._last_region = None
-        if not self.g.get("hide_when_fullscreen", True) and self.fullscreen_hidden:
+        if self._hides_for_fullscreen() is False and self.fullscreen_hidden:
             self.fullscreen_hidden = False
             self.visible_amt.to(1.0)
 
@@ -391,8 +391,15 @@ class Island(Gtk.Window):
     def set_pinned(self, pinned: bool) -> None:
         self.pinned = pinned
 
+    def _hides_for_fullscreen(self) -> bool:
+        return bool(self.g.get("hide_when_fullscreen", True)) and not self.g.get("always_on_top", False)
+
     def set_fullscreen_hidden(self, hidden: bool) -> None:
-        if not self.g.get("hide_when_fullscreen", True):
+        if self.g.get("always_on_top", False):
+            if hidden:
+                self.backend.raise_above(self)
+            return
+        if not self._hides_for_fullscreen():
             return
         self.fullscreen_hidden = hidden
         _log.debug("fullscreen app focused: %s", hidden)

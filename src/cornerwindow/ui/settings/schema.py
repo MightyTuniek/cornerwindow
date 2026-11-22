@@ -57,6 +57,7 @@ SECTIONS: list[Section] = [
         F("close_on_focus_out", "Close when clicking elsewhere", "bool"),
         F("close_on_leave_ms", "Close after pointer leaves", "int", "0 = never.", max=10000, step=100, unit="ms"),
         F("hide_when_fullscreen", "Hide during fullscreen apps", "bool"),
+        F("always_on_top", "Always on top, even over fullscreen", "bool"),
         F("window_type", "Window type (X11)", "choice", "Try “dock” if your window manager misbehaves.",
           choices=["utility", "dock"], restart=True),
     ]),

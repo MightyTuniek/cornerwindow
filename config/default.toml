@@ -12,6 +12,7 @@ hover_open_delay_ms = 250     # only for open_on = "hover"
 close_on_focus_out = true     # clicking anywhere else closes the island
 close_on_leave_ms = 0         # >0: also close after the pointer has left for this long
 hide_when_fullscreen = true   # get out of the way of games and videos
+always_on_top = false         # true: stay above every window, fullscreen apps included (overrides hide_when_fullscreen)
 window_type = "utility"       # X11 window type: utility | dock (try dock if the WM misbehaves)
 
 [trigger]

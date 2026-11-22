@@ -37,6 +37,13 @@ class WindowBackend:
     def release_focus(self, window: Gtk.Window) -> None:
         window.set_accept_focus(False)
 
+    def raise_above(self, window: Gtk.Window) -> None:
+        """Put the window back above everything, fullscreen apps included."""
+        window.set_keep_above(True)
+        gdk_window = window.get_window()
+        if gdk_window:
+            gdk_window.raise_()
+
     def watch_fullscreen(self, window: Gtk.Window, callback: Callable[[bool], None]) -> None:
         """Call callback(True) while a fullscreen app is focused on our monitor."""
 
