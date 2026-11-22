@@ -9,10 +9,8 @@ from typing import Callable
 from gi.repository import Gdk, Gtk
 
 from ...core.anim import Animator, Spring
-from .. import icons
-from ..draw import mix
-
-BG = (1.0, 1.0, 1.0, 0.12)
+from .. import icons, theme
+from ..draw import mix, platter_rim
 
 
 class HoldButton(Gtk.EventBox):
@@ -99,14 +97,19 @@ class HoldButton(Gtk.EventBox):
         h = widget.get_allocated_height()
         cx, cy = w / 2, h / 2
         r = self.size / 2 * (1.0 - 0.06 * self.progress + 0.08 * self.pop.value)
+        p = theme.current()
         cr.arc(cx, cy, r, 0, 2 * math.pi)
-        cr.set_source_rgba(*mix(mix(BG, (1, 1, 1, 0.2), self.hover.value), self.color, self.progress * 0.5))
+        cr.set_source_rgba(*mix(mix(p.hold_bg, p.hold_bg_hover, self.hover.value), self.color, self.progress * 0.5))
         cr.fill()
+        if p.platter_rim:
+            cr.arc(cx, cy, r - 0.5, 0, 2 * math.pi)
+            platter_rim(cr, p.platter_rim * 0.8, cy - r, 2 * r)
+            cr.new_path()
         if self.progress > 0.001:
             cr.set_line_width(2.5)
             cr.set_line_cap(1)
             cr.set_source_rgba(*self.color)
             cr.arc(cx, cy, r - 1.5, -math.pi / 2, -math.pi / 2 + 2 * math.pi * self.progress)
             cr.stroke()
-        icons.paint(cr, self.icon, cx, cy, round(self.size * 0.42), (1, 1, 1, 0.95), widget.get_scale_factor())
+        icons.paint(cr, self.icon, cx, cy, round(self.size * 0.42), mix(p.hold_icon, (1, 1, 1, 1), self.progress), widget.get_scale_factor())
         return True

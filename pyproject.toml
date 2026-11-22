@@ -20,7 +20,7 @@ cornerwindow = "cornerwindow.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cornerwindow = ["ui/style.css", "data/*.toml", "data/machines/*.toml"]
+cornerwindow = ["ui/style.css", "native/glass.c", "data/*.toml", "data/machines/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

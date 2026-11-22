@@ -9,7 +9,7 @@ from gi.repository import Gtk
 
 
 class Sparkline(Gtk.DrawingArea):
-    def __init__(self, points: int = 40, color=(1.0, 1.0, 1.0), maximum: float | None = 100.0,
+    def __init__(self, points: int = 40, color=None, maximum: float | None = 100.0,
                  height: int = 26) -> None:
         super().__init__()
         self.data: deque[float] = deque(maxlen=points)
@@ -34,6 +34,12 @@ class Sparkline(Gtk.DrawingArea):
         offset = (n - len(self.data)) * step
         pts = [(offset + i * step, h - 2 - (min(v, top) / top) * (h - 4)) for i, v in enumerate(self.data)]
 
+        if self.color is None:
+            from .. import theme
+
+            color = theme.current().chart
+        else:
+            color = self.color
         cr.move_to(*pts[0])
         for i in range(1, len(pts)):  # Catmull-Rom -> Bezier for a smooth line
             p0 = pts[i - 2] if i >= 2 else pts[i - 1]
@@ -48,14 +54,14 @@ class Sparkline(Gtk.DrawingArea):
         cr.line_to(pts[0][0], h)
         cr.close_path()
         gradient = cairo.LinearGradient(0, 0, 0, h)
-        gradient.add_color_stop_rgba(0, *self.color, 0.28)
-        gradient.add_color_stop_rgba(1, *self.color, 0.0)
+        gradient.add_color_stop_rgba(0, *color, 0.28)
+        gradient.add_color_stop_rgba(1, *color, 0.0)
         cr.set_source(gradient)
         cr.fill()
 
         cr.new_path()
         cr.append_path(line)
-        cr.set_source_rgba(*self.color, 0.9)
+        cr.set_source_rgba(*color, 0.9)
         cr.set_line_width(1.5)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
         cr.stroke()

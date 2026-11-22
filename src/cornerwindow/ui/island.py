@@ -2,6 +2,8 @@
 
 Collapsed it shows only a small black quarter-circle. Click it and the same
 outline springs open into the panel; content pours out of the corner after it.
+With the Liquid Glass theme the same outline is a lens over the live backdrop
+(ui/glass.py), from the droplet trigger to the open panel.
 
 Smoothness rules followed here:
   * the window is never resized or moved while animating (it is pre-sized to the
@@ -25,9 +27,10 @@ from ..core.actions import ActionRegistry
 from ..core.anim import Animator, Spring, clamp, lerp, progress
 from ..config import Config
 from ..platform.window.base import WindowBackend
-from . import shape
+from . import shape, theme
 from .content import CardGrid
 from .draw import text
+from .glass import GlassConfig, GlassRenderer
 
 _log = log.get("island")
 OVERSHOOT_MARGIN = 44
@@ -94,9 +97,26 @@ class Island(Gtk.Window):
         self.fade = Spring(0.0, precision=0.002)  # global content opacity
         self.visible_amt = Spring(1.0, response=0.3, damping_fraction=1.0, precision=0.002)
         self.glow = Spring(0.0, response=0.25, damping_fraction=1.0, precision=0.002)
+        self.press_amt = Spring(0.0, response=0.5, damping_fraction=1.0, precision=0.003)
         self.anim = Animator(self, self._frame,
-                             [self.w, self.h, self.content, self.fade, self.visible_amt, self.glow],
+                             [self.w, self.h, self.content, self.fade, self.visible_amt, self.glow,
+                              self.press_amt],
                              slow_motion=slow)
+
+        # -- Liquid Glass ---------------------------------------------------------------
+        self.palette = theme.current()
+        self.glass: GlassRenderer | None = None
+        self.glass_config = GlassConfig()
+        self._press_at = (0.0, 0.0)
+        self._dirty_timer = 0
+        self._catch_up = 0
+        self._last_dirty_draw = 0.0
+        press = Gtk.GestureMultiPress.new(self.root)
+        press.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)  # sees presses on any card
+        press.set_button(0)
+        press.connect("pressed", self._glass_pressed)
+        press.connect("released", self._glass_released)
+        self._press_gesture = press
 
         self.connect("draw", self._draw)
         self.connect("key-press-event", self._key)
@@ -125,6 +145,108 @@ class Island(Gtk.Window):
         self.bg = Gdk.RGBA()
         if not self.bg.parse(str(p.get("background", "#000000"))):
             self.bg.parse("#000000")
+
+    # == theme =======================================================================
+    def set_theme(self, palette: theme.Palette, glass_config: GlassConfig, backdrop=None) -> None:
+        """Switch palette; `backdrop` (platform/backdrop) turns the glass on, None turns it off."""
+        self.palette = palette
+        self.glass_config = glass_config
+        ctx = self.root.get_style_context()
+        for cls in ("cw-glass", "cw-light"):
+            (ctx.add_class if cls in palette.css_classes else ctx.remove_class)(cls)
+        if backdrop is None and self.glass is not None:
+            self.glass.close()
+            self.glass = None
+        elif backdrop is not None and self.glass is None:
+            self.glass = GlassRenderer(backdrop.track(self._xid, self._glass_area, self._backdrop_dirty))
+        if self.glass is not None:
+            self.glass.invalidate()
+        self.queue_draw()
+
+    def glass_luma(self) -> float | None:
+        return self.glass.last_luma if self.glass is not None else None
+
+    def _xid(self) -> int:
+        window = self.get_window()
+        return window.get_xid() if window is not None and hasattr(window, "get_xid") else 0
+
+    def _origin(self) -> tuple[int, int]:
+        """The window's top-left on the root, device pixels (where backend.place put it)."""
+        geometry = self._monitor().get_geometry()
+        win_w = getattr(self, "win_w", self.get_allocated_width())
+        win_h = getattr(self, "win_h", self.get_allocated_height())
+        x = geometry.x if self.corner.endswith("left") else geometry.x + geometry.width - win_w
+        y = geometry.y + geometry.height - win_h if self.corner.startswith("bottom") else geometry.y
+        scale = self.get_scale_factor()
+        return int(x * scale), int(y * scale)
+
+    def _trigger_zone(self) -> tuple[int, int, int, int]:
+        """Window-coordinate box around the collapsed trigger (activity bubbles included)."""
+        size = int(max(self.w.value, self.h.value, self.hover_r, 40.0) + 12)
+        win_w, win_h = self.get_allocated_width(), self.get_allocated_height()
+        x = win_w - size if self.corner.endswith("right") else 0
+        y = win_h - size if self.corner.startswith("bottom") else 0
+        return x, y, size, size
+
+    def _collapsed_settled(self) -> bool:
+        return not self.is_open and self.openness() < 0.02 and not self.anim.running
+
+    def _glass_area(self):
+        """Root rectangle whose changes matter: the trigger while collapsed, else the window."""
+        if self.visible_amt.target < 0.5:
+            return None
+        scale = self.get_scale_factor()
+        ox, oy = self._origin()
+        if self._collapsed_settled():
+            x, y, w, h = self._trigger_zone()
+        else:
+            x, y, w, h = 0, 0, self.get_allocated_width(), self.get_allocated_height()
+        return (ox + x * scale, oy + y * scale, w * scale, h * scale)
+
+    def _backdrop_dirty(self) -> None:
+        """Something behind us changed. A video behind may damage 60x a second; the
+        backdrop follows at up to 30 fps open (video rate) and 15 fps collapsed."""
+        if self.anim.running:
+            return  # the animation redraws anyway (and catches up once settled)
+        if self._dirty_timer:
+            return
+        rate = 15 if self._collapsed_settled() else 30
+        wait = max(0, int((self._last_dirty_draw + 1 / rate - time.monotonic()) * 1000))
+        self._dirty_timer = GLib.timeout_add(wait, self._dirty_draw)
+
+    def _catch_up_backdrop(self) -> bool:
+        """Redraw at full quality, with a fresh backdrop, once everything has settled."""
+        if self.anim.running:
+            return True  # check again shortly
+        self._catch_up = 0
+        self.queue_draw()
+        return False
+
+    def _dirty_draw(self) -> bool:
+        self._dirty_timer = 0
+        self._last_dirty_draw = time.monotonic()
+        self.queue_draw()
+        return False
+
+    def _prefetch_glass(self) -> bool:
+        if self.glass is not None:
+            ox, oy = self._origin()
+            scale = self.get_scale_factor()
+            self.glass.prefetch((ox, oy, self.get_allocated_width() * scale, self.get_allocated_height() * scale),
+                                self.glass_config.frost)
+        return False
+
+    def _glass_pressed(self, _gesture, _n, x, y) -> None:
+        if self.glass is None or not self.is_open:
+            return
+        self._press_at = (x, y)
+        self.press_amt.to(1.0, 0.18, 1.0)
+        self.anim.kick()
+
+    def _glass_released(self, *_args) -> None:
+        if self.press_amt.target > 0:
+            self.press_amt.to(0.0, 0.6, 1.0)
+            self.anim.kick()
 
     def new_grid(self) -> CardGrid:
         """Replace the content grid (on startup and whenever the config changes)."""
@@ -237,6 +359,8 @@ class Island(Gtk.Window):
             hook()
         self.root.set_above_child(False)
         self.grid.invalidate()
+        if self.glass is not None:
+            self._prefetch_glass()  # before the first animated frame, not during it
         a = self.a
         self.w.to(self.panel_w, a.get("open_response", 0.42), a.get("open_damping", 0.78))
         self.h.to(self.panel_h, a.get("open_height_response", 0.5), a.get("open_damping", 0.78) + 0.04)
@@ -348,19 +472,31 @@ class Island(Gtk.Window):
         params = self._params()
         ops = shape.outline(params)
 
+        glass = self._render_glass(params, ops, opened, vis) if self.glass is not None else None
+
         cr.save()
         self._apply_corner(cr)
         if opened > 0.02 and self.p.get("shadow", True):
             shape.draw(cr, ops)
+            strength = self.palette.look.shadow if glass is not None else 1.0
             for width, alpha in ((26, 0.035), (14, 0.06), (6, 0.09)):
                 cr.set_line_width(width)
-                cr.set_source_rgba(0, 0, 0, alpha * opened * vis)
+                cr.set_source_rgba(0, 0, 0, alpha * opened * vis * strength)
                 cr.stroke_preserve()
             cr.new_path()
-        shape.draw(cr, ops)
-        cr.set_source_rgba(self.bg.red, self.bg.green, self.bg.blue, vis)
-        cr.fill_preserve()
-        rim = 0.09 * opened + 0.16 * self.glow.value * (1 - opened)
+        if glass is not None:
+            surface, gx, gy = glass
+            cr.save()
+            cr.identity_matrix()
+            cr.set_source_surface(surface, gx, gy)
+            cr.paint_with_alpha(min(1.0, vis * 1.5))
+            cr.restore()
+            rim = 0.0
+        else:
+            shape.draw(cr, ops)
+            cr.set_source_rgba(self.bg.red, self.bg.green, self.bg.blue, vis)
+            cr.fill_preserve()
+            rim = 0.09 * opened + 0.16 * self.glow.value * (1 - opened)
         if rim > 0.005:
             gradient = cairo.LinearGradient(0, 0, params.w, params.h)
             gradient.add_color_stop_rgba(0.0, 1, 1, 1, 0.0)
@@ -376,6 +512,58 @@ class Island(Gtk.Window):
         cr.restore()
         return False  # let GTK draw the content grid on top
 
+    def _render_glass(self, params: shape.ShapeParams, ops, opened: float, vis: float):
+        """The glass surface for the current outline, or None (then the solid fill is used)."""
+        win_w, win_h = self.get_allocated_width(), self.get_allocated_height()
+        right, bottom = self.corner.endswith("right"), self.corner.startswith("bottom")
+        f = max(0.0, min(params.ears, params.w * 0.5, params.h * 0.5))  # rounded-in corners stay inside
+        bw, bh = params.w + f + 1, params.h + f + 1
+        bbox = (win_w - bw if right else 0, win_h - bh if bottom else 0, bw, bh)
+        edges = [("x", float(win_w) if right else 0.0), ("y", float(win_h) if bottom else 0.0)]
+        scale = self.get_scale_factor()
+        ox, oy = self._origin()
+        if self._collapsed_settled():
+            zx, zy, zw, zh = self._trigger_zone()
+            capture = (ox + zx * scale, oy + zy * scale, zw * scale, zh * scale)
+        elif self.anim.running:
+            capture = (ox, oy, win_w * scale, win_h * scale)  # prefetched in open(); frozen meanwhile
+        else:
+            # settled open: only the panel (plus room for the blur), not the whole window height
+            m = 32
+            x0, y0 = max(0, int(bbox[0]) - m), max(0, int(bbox[1]) - m)
+            x1, y1 = min(win_w, int(bbox[0] + bbox[2]) + m), min(win_h, int(bbox[1] + bbox[3]) + m)
+            capture = (ox + x0 * scale, oy + y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale)
+
+        def path(cr) -> None:
+            cr.save()
+            self._apply_corner(cr)
+            shape.draw(cr, ops)
+            cr.restore()
+
+        key = (round(params.w, 2), round(params.h, 2), round(params.radius, 2), round(params.ears, 2),
+               round(params.smoothing, 3), self.corner, win_w, win_h)
+        press = (*self._press_at, self.press_amt.value)
+        # While anything animates, keep the backdrop still (refreshing costs a few ms and
+        # nobody sees a backdrop a fraction of a second old mid-spring); catch up after.
+        animating = self.anim.running
+        bezel = min(26.0, 0.72 * min(params.w, params.h))
+        try:
+            result = self.glass.render(path_fn=path, shape_key=key, bbox=bbox, origin=(ox, oy), scale=scale,
+                                     screen_edges=edges, palette=self.palette, config=self.glass_config,
+                                     bezel=bezel, strength=vis, glow=self.glow.value * (1 - opened),
+                                     press=press, capture_rect=capture, refresh=not animating,
+                                     local_blur=self._collapsed_settled(),
+                                     quality=0.5 if animating and opened > 0.05 else 1.0)
+            if animating and self.glass is not None and not self._catch_up:
+                # full resolution (and any backdrop change) once the spring has settled
+                self._catch_up = GLib.timeout_add(30, self._catch_up_backdrop)
+            return result
+        except Exception:
+            _log.exception("Glass rendering failed; falling back to the solid panel")
+            self.glass.close()
+            self.glass = None
+            return None
+
     def _draw_activity(self, cr, act: Activity, r: float, alpha: float) -> None:
         import math
 
@@ -384,17 +572,18 @@ class Island(Gtk.Window):
             gap = 0.16
             cr.set_line_cap(cairo.LINE_CAP_ROUND)
             cr.set_line_width(2.6)
-            cr.set_source_rgba(1, 1, 1, 0.16 * alpha)
+            ink = self.palette.text
+            cr.set_source_rgba(*ink[:3], 0.16 * alpha)
             cr.arc(0, 0, ring, gap, math.pi / 2 - gap)
             cr.stroke()
             level = clamp(act.level)
             if level > 0.005:
-                cr.set_source_rgba(*act.color, alpha)
+                cr.set_source_rgba(*self._activity_color(act.color), alpha)
                 cr.arc(0, 0, ring, gap, gap + (math.pi / 2 - 2 * gap) * level)
                 cr.stroke()
         centre = r * 0.38
         if act.dot:
-            cr.set_source_rgba(*act.color, alpha)
+            cr.set_source_rgba(*self._activity_color(act.color), alpha)
             cr.arc(centre, centre, 3.2, 0, 2 * math.pi)
             cr.fill()
         if act.label and r > 26:
@@ -402,8 +591,15 @@ class Island(Gtk.Window):
             cr.save()
             cr.identity_matrix()
             size = 11 if len(act.label) <= 2 else 9
-            text(cr, self, act.label, x, y, size=size, weight=700, rgba=(1, 1, 1, alpha), align="center")
+            ink = self.palette.text
+            text(cr, self, act.label, x, y, size=size, weight=700, rgba=(*ink[:3], alpha), align="center")
             cr.restore()
+
+    def _activity_color(self, color) -> tuple[float, float, float]:
+        """White indicators would vanish on light glass; use the palette's ink instead."""
+        if self.palette.light and min(color[:3]) > 0.9:
+            return self.palette.text[:3]
+        return tuple(color[:3])
 
     def _update_input_region(self) -> None:
         win_w, win_h = self.get_allocated_width(), self.get_allocated_height()
@@ -473,6 +669,8 @@ class Island(Gtk.Window):
         if event.detail == Gdk.NotifyType.INFERIOR:
             return False
         self.hovering = True
+        if self.glass is not None and not self.is_open:
+            GLib.idle_add(self._prefetch_glass, priority=GLib.PRIORITY_LOW)
         if self._leave_timer:
             GLib.source_remove(self._leave_timer)
             self._leave_timer = 0

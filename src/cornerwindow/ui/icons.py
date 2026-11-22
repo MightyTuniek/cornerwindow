@@ -47,7 +47,7 @@ FALLBACKS = {
     "weather": ("weather-few-clouds-symbolic",),
 }
 
-DRAWN = {"sun", "contrast", "caffeine-cup"}
+DRAWN = {"sun", "contrast", "caffeine-cup", "glass"}
 
 
 @lru_cache(maxsize=256)
@@ -77,6 +77,9 @@ def paint(cr, name: str, cx: float, cy: float, size: float, rgba=(1, 1, 1, 1), s
         return
     if name == "caffeine-cup":
         _cup(cr, cx, cy, size, rgba)
+        return
+    if name == "glass":
+        _droplet(cr, cx, cy, size, rgba)
         return
     pixbuf = _pixbuf(name, int(size), tuple(rgba), scale)
     if pixbuf is None:
@@ -143,4 +146,24 @@ def _cup(cr, cx, cy, size, rgba) -> None:
         cr.move_to(sx, y0 - size * 0.08)
         cr.curve_to(sx - size * 0.06, y0 - size * 0.16, sx + size * 0.06, y0 - size * 0.22, sx, y0 - size * 0.3)
         cr.stroke()
+    cr.restore()
+
+
+def _droplet(cr, cx, cy, size, rgba) -> None:
+    """A drop of liquid glass: outlined, with a highlight arc inside."""
+    cr.save()
+    cr.set_source_rgba(*rgba)
+    cr.set_line_width(max(size * 0.09, 1.4))
+    r = size * 0.27
+    by = cy + size * 0.14
+    top = cy - size * 0.42
+    cr.move_to(cx, top)
+    cr.curve_to(cx + r * 0.35, top + r * 0.9, cx + r, by - r * 0.9, cx + r, by)
+    cr.arc(cx, by, r, 0, math.pi)
+    cr.curve_to(cx - r, by - r * 0.9, cx - r * 0.35, top + r * 0.9, cx, top)
+    cr.close_path()
+    cr.stroke()
+    cr.set_line_cap(1)
+    cr.arc(cx, by, r * 0.55, math.pi * 0.55, math.pi * 0.95)
+    cr.stroke()
     cr.restore()

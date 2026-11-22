@@ -1,4 +1,4 @@
-"""A smaller black window that docks beside the open island and edits every option.
+"""A smaller black (or Liquid Glass) window that docks beside the open island and edits every option.
 
 Edits are written straight into ~/.config/cornerwindow/config.toml (comments
 kept) and applied live. Edits made in any config file while it's open show
@@ -16,6 +16,8 @@ from ...core import log
 from ...core.anim import Animator, Spring
 from ...platform import sensors
 from ...platform.desktop import open_uri
+from .. import theme
+from ..glass import GlassConfig, GlassRenderer
 from ..widgets import IconButton, label
 from ..widgets.card import set_active
 from . import editors
@@ -66,7 +68,12 @@ class SettingsWindow(Gtk.Window):
         self.slide = Spring(0.0, response=0.34, damping_fraction=0.82, precision=0.05)
         self.anim = Animator(self, self._frame, [self.alpha, self.slide])
 
+        self.palette = theme.current()
+        self.glass: GlassRenderer | None = None
+        self.glass_config = GlassConfig()
+
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.root_box = root
         root.get_style_context().add_class("cw-root")
         root.get_style_context().add_class("cw-settings")
         for side in ("top", "bottom", "start", "end"):
@@ -450,6 +457,66 @@ class SettingsWindow(Gtk.Window):
     def _open(self, path) -> None:
         open_uri(path.as_uri())
 
+    # == theme =========================================================================
+    def set_theme(self, palette: theme.Palette, glass_config: GlassConfig, backdrop=None) -> None:
+        self.palette = palette
+        self.glass_config = glass_config
+        ctx = self.root_box.get_style_context()
+        for cls in ("cw-glass", "cw-light"):
+            (ctx.add_class if cls in palette.css_classes else ctx.remove_class)(cls)
+        if backdrop is None and self.glass is not None:
+            self.glass.close()
+            self.glass = None
+        elif backdrop is not None and self.glass is None:
+            self.glass = GlassRenderer(backdrop.track(self._xid, self._glass_area, self.queue_draw))
+        if self.glass is not None:
+            self.glass.invalidate()
+        self.queue_draw()
+
+    def _xid(self) -> int:
+        window = self.get_window()
+        return window.get_xid() if window is not None and hasattr(window, "get_xid") else 0
+
+    def _origin(self) -> tuple[int, int] | None:
+        window = self.get_window()
+        if window is None:
+            return None
+        result = window.get_origin()
+        x, y = result[-2:]
+        scale = self.get_scale_factor()
+        return int(x * scale), int(y * scale)
+
+    def _glass_area(self):
+        if not self.get_visible():
+            return None
+        origin = self._origin()
+        if origin is None:
+            return None
+        scale = self.get_scale_factor()
+        return (*origin, self.get_allocated_width() * scale, self.get_allocated_height() * scale)
+
+    def _draw_glass(self, cr, x: float, width: float, h: float) -> bool:
+        origin = self._origin()
+        if origin is None:
+            return False
+        scale = self.get_scale_factor()
+        try:
+            result = self.glass.render(
+                path_fn=lambda c: _squircle(c, x, 0, width, h, RADIUS), shape_key=(round(x, 2), width, h),
+                bbox=(x, 0, width, h), origin=origin, scale=scale, screen_edges=[], palette=self.palette,
+                config=self.glass_config, bezel=20.0, capture_rect=self._glass_area())
+        except Exception:
+            _log.exception("Glass rendering failed; falling back to the solid window")
+            self.glass.close()
+            self.glass = None
+            return False
+        if result is None:
+            return False
+        surface, gx, gy = result
+        cr.set_source_surface(surface, gx, gy)
+        cr.paint()
+        return True
+
     # == drawing =========================================================================
     def _draw(self, _w, cr) -> bool:
         cr.set_operator(cairo.OPERATOR_SOURCE)
@@ -459,6 +526,8 @@ class SettingsWindow(Gtk.Window):
         w, h = self.get_allocated_width(), self.get_allocated_height()
         x = max(self.slide.value, 0.0)
         width = w - abs(self.slide.value)
+        if self.glass is not None and self._draw_glass(cr, x, width, h):
+            return False
         _squircle(cr, x, 0, width, h, RADIUS)
         bg = self.app.island.bg
         cr.set_source_rgba(bg.red, bg.green, bg.blue, 1.0)

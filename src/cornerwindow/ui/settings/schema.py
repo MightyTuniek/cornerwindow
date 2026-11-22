@@ -74,10 +74,23 @@ SECTIONS: list[Section] = [
         F("spacing", "Card spacing", "int", max=40, unit="px"),
         F("padding", "Edge padding", "int", max=48, unit="px"),
         F("corner_radius", "Corner radius", "int", max=80, unit="px"),
-        F("ears", "Edge fillets", "int", "The concave curves where the panel meets the screen edge.", max=40, unit="px"),
+        F("ears", "Edge corners", "int", "Where the panel meets the screen edges: negative rounds the corner "
+          "into the panel, positive flares it outward, 0 is square.", min=-40, max=40, unit="px"),
         F("smoothing", "Corner smoothing", "float", "0 = circular, 0.6 = iOS-style continuous.", max=1, step=0.05, digits=2),
         F("shadow", "Shadow", "bool"),
+        F("glass", "Liquid Glass", "bool", "See-through glass that bends what is behind it. Tune it under Glass."),
     ]),
+    Section("glass", "Glass", "glass", [
+        F("appearance", "Appearance", "choice", "System follows the desktop's light/dark setting; "
+          "adaptive picks by how bright the content behind is.", choices=["system", "light", "dark", "adaptive"]),
+        F("frost", "Frost", "float", "0 = clear glass, 1 = frosted.", max=1, step=0.05, digits=2),
+        F("tint", "Tint", "float", "More tint reads easier but shows less of what's behind.", max=1, step=0.05, digits=2),
+        F("refraction", "Lensing", "float", "How strongly the rim bends the backdrop.", max=3, step=0.05, digits=2),
+        F("dispersion", "Colour fringe", "float", "Rainbow split where the light bends most.", max=1, step=0.05, digits=2),
+        F("light_angle", "Light direction", "int", "0 = from the top, -90 = from the left, 90 = from the right.",
+          min=-180, max=180, step=5, unit="°"),
+        F("live", "Live backdrop", "bool", "X11: follow what moves behind the glass. Off = wallpaper only.", restart=True),
+    ], "Only used when Liquid Glass is on (Look)."),
     Section("animation", "Motion", "timer", [
         F("open_response", "Open speed", "float", SPRING, min=0.1, max=2, step=0.02, digits=2, unit="s"),
         F("open_damping", "Open bounce", "float", DAMP, min=0.3, max=1.2, step=0.02, digits=2),
@@ -114,7 +127,7 @@ SECTIONS: list[Section] = [
         F("backend", "Backend", "choice", choices=["auto", "wpctl", "pactl"], restart=True),
     ]),
     Section("toggles", "Toggles", "wifi", [
-        F("items", "Toggles", "list", "Shown in this order. Available: wifi, bluetooth, night_light, dark_mode, dnd, caffeine, mic."),
+        F("items", "Toggles", "list", "Shown in this order. Available: wifi, bluetooth, night_light, dark_mode, dnd, caffeine, mic, glass."),
         F("per_row", "Per row", "int", min=2, max=6),
     ]),
     Section("glance", "System", "monitor", [

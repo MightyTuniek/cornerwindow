@@ -13,6 +13,8 @@ and x/y grow *into* the screen. `corner_transform` maps it to any real corner.
     (0,h+f)
 
 With w = h = R and f = 0 the outline degenerates to a perfect quarter-circle.
+A negative ear size rounds those two corners *into* the panel instead (convex,
+radius |f|), so the panel meets the screen edges with ordinary rounded corners.
 """
 
 from __future__ import annotations
@@ -92,13 +94,16 @@ def _smooth_corner(corner: tuple[float, float], dir_in: tuple[float, float],
 
 def outline(params: ShapeParams) -> list[Op]:
     w, h = max(params.w, 0.0), max(params.h, 0.0)
-    f = max(0.0, min(params.ears, w * 0.5, h * 0.5))
-    budget = max(min(w, h) - f, 0.0)
-    radius = max(0.0, min(params.radius, budget))
+    convex = params.ears < 0
+    f = max(0.0, min(abs(params.ears), w * 0.5, h * 0.5))
     ops: list[Op] = [("M", 0.0, 0.0)]
 
-    # along the screen edge, then the concave ear into the panel's far side
-    if f > 0.01:
+    # along the screen edge, then into the panel's far side: a concave ear that
+    # flares out (ears > 0) or a convex corner that rounds in (ears < 0)
+    if f > 0.01 and convex:
+        ops.append(("L", w - f, 0.0))
+        ops.append(("C", w - f + KAPPA * f, 0.0, w, f - KAPPA * f, w, f))
+    elif f > 0.01:
         ops.append(("L", w + f, 0.0))
         ops.append(("C", w + f - KAPPA * f, 0.0, w, f - KAPPA * f, w, f))
     else:
@@ -106,11 +111,15 @@ def outline(params: ShapeParams) -> list[Op]:
 
     # down the far side to the continuous inner corner
     budget_corner = max(min(w - f, h - f), 0.0) if f > 0.01 else min(w, h)
+    radius = max(0.0, min(params.radius, budget_corner))
     ops.extend(_smooth_corner((w, h), (0.0, 1.0), (-1.0, 0.0), radius, budget_corner,
                               params.smoothing))
 
-    # along the bottom to the second ear, back up the other screen edge
-    if f > 0.01:
+    # along the bottom to the second ear/corner, back up the other screen edge
+    if f > 0.01 and convex:
+        ops.append(("L", f, h))
+        ops.append(("C", f - KAPPA * f, h, 0.0, h - f + KAPPA * f, 0.0, h - f))
+    elif f > 0.01:
         ops.append(("L", f, h))
         ops.append(("C", f - KAPPA * f, h, 0.0, h + f - KAPPA * f, 0.0, h + f))
     else:

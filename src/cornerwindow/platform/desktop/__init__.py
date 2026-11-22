@@ -26,6 +26,11 @@ class DarkMode:
     def is_on(self) -> bool:
         return bool(self._s) and self._s.get_string("color-scheme") == "prefer-dark"
 
+    def watch(self, fn) -> None:
+        """Call fn() whenever the desktop switches between light and dark."""
+        if self._s is not None:
+            self._s.connect("changed::color-scheme", lambda *_a: fn())
+
     def set(self, on: bool) -> None:
         if not self._s:
             return

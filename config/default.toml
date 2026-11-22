@@ -29,9 +29,21 @@ column_width = 330
 spacing = 10
 padding = 14
 corner_radius = 28            # the inner corner of the open panel
-ears = 10                     # concave fillets where the panel meets the screen edges
+ears = 10                     # where the panel meets the screen edges: >0 flares out, <0 rounds in, 0 = square
 smoothing = 0.6               # 0 = circular corners, 0.6 = iOS-like continuous corners
 shadow = true
+glass = false                 # Liquid Glass theme instead of the black island (see [glass])
+
+[glass]
+# Liquid Glass bends the live backdrop like a lens at its rim instead of just blurring it.
+# Needs a C compiler once (the pixel kernel is built into ~/.cache/cornerwindow).
+appearance = "system"         # system (follow light/dark) | light | dark | adaptive (by what's behind)
+frost = 0.5                   # 0 = clear glass … 1 = frosted
+tint = 0.5                    # 0 … 1: more tint = easier to read, less see-through
+refraction = 1.0              # strength of the lensing at the rim (0 = none)
+dispersion = 0.3              # colour fringing where the light bends most
+light_angle = -45             # where the light comes from, degrees: 0 = top, -90 = left, 90 = right
+live = true                   # X11: follow what moves behind the glass (false = wallpaper only)
 
 [animation]
 # Springs use SwiftUI semantics: response = seconds, damping < 1 = a little bounce.
@@ -96,7 +108,7 @@ show_mic_muted = true         # red dot on the trigger while the mic is muted
 names = {}                    # device name substring -> friendly name
 
 [toggles]
-items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine"]
+items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine", "glass"]
 per_row = 4
 
 [glance]

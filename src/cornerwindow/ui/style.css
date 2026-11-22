@@ -1,4 +1,5 @@
 /* CornerWindow: pure black island, translucent cards, Apple-ish typography.
+   The Liquid Glass theme adds .cw-glass (and .cw-light) to the root; see the end.
    Everything is scoped under .cw-root so the host GTK theme never leaks in. */
 
 window.cw-window {
@@ -14,6 +15,10 @@ window.cw-window {
   -gtk-icon-shadow: none;
   outline-color: transparent;
 }
+
+/* Liquid Glass, light appearance: dark ink everywhere. Placed before the specific
+   rules so their dims still win; the light variants of those are at the end. */
+.cw-light, .cw-light * { color: #1d1d1f; }
 
 .cw-root { font-size: 13px; }
 .cw-root tooltip, tooltip.background { background-color: rgba(30, 30, 32, 0.96); border-radius: 8px; }
@@ -195,3 +200,87 @@ window.cw-window {
 .cw-settings combobox button:hover { background-color: rgba(255, 255, 255, 0.15); }
 
 .cw-settings entry.cw-compact { padding: 4px 2px; min-width: 0; }
+
+/* ── Liquid Glass ──────────────────────────────────────
+   The panel itself is the glass (drawn in ui/glass.py). Controls on it are
+   vibrant platters with a specular hairline, never glass on glass.
+   Hairlines are 1px borders with 1px less padding: the same size as the black
+   theme (switching never moves anything), and far cheaper to draw than GTK's
+   inset box-shadows. */
+.cw-glass .cw-card {
+  background-color: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-top-color: rgba(255, 255, 255, 0.15);
+  padding: 11px 11px;
+}
+.cw-glass .cw-card.cw-flat { background-color: transparent; border-color: transparent; padding: 1px 3px; }
+.cw-glass button.cw-icon {
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.16);
+  padding: 6px;
+}
+.cw-glass button.cw-icon.cw-big { padding: 8px; }
+.cw-glass button.cw-icon.cw-plain { border-color: transparent; }
+.cw-glass button.cw-chip {
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.16);
+  padding: 4px 10px;
+}
+.cw-glass .cw-segments {
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.12);
+  padding: 2px;
+}
+.cw-glass .cw-root tooltip, .cw-glass tooltip.background { background-color: rgba(30, 30, 32, 0.9); }
+
+/* light appearance */
+.cw-light .cw-card {
+  background-color: rgba(255, 255, 255, 0.42);
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: rgba(255, 255, 255, 0.85);
+}
+.cw-light .cw-card.cw-flat { background-color: transparent; border-color: transparent; }
+.cw-light .cw-title { color: rgba(0, 0, 0, 0.5); }
+.cw-light .cw-dim { color: rgba(0, 0, 0, 0.5); }
+.cw-light .cw-date { color: rgba(0, 0, 0, 0.62); }
+.cw-light .cw-tile-label { color: rgba(0, 0, 0, 0.72); }
+.cw-light .cw-artist, .cw-light .cw-metric-sub { color: rgba(0, 0, 0, 0.5); }
+
+.cw-light button.cw-icon, .cw-light button.cw-chip {
+  background-color: rgba(255, 255, 255, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.9);
+}
+.cw-light button.cw-icon:hover, .cw-light button.cw-chip:hover { background-color: rgba(255, 255, 255, 0.75); }
+.cw-light button.cw-icon:active, .cw-light button.cw-chip:active { background-color: rgba(255, 255, 255, 0.9); }
+.cw-light button.cw-icon.active, .cw-light button.cw-chip.active { background-color: #1d1d1f; }
+.cw-light button.cw-icon.active image, .cw-light button.cw-chip.active label { color: #fff; }
+.cw-light button.cw-icon.cw-plain { background-color: transparent; border-color: transparent; }
+.cw-light button.cw-icon.cw-plain:hover { background-color: rgba(0, 0, 0, 0.06); }
+
+.cw-light .cw-segments { background-color: rgba(0, 0, 0, 0.06); border-color: transparent; }
+.cw-light .cw-segments button label { color: rgba(0, 0, 0, 0.6); }
+.cw-light .cw-segments button:hover { background-color: rgba(255, 255, 255, 0.4); }
+.cw-light .cw-segments button.active { background-color: rgba(255, 255, 255, 0.92); }
+.cw-light .cw-segments button.active label { color: #1d1d1f; }
+
+.cw-light entry { background-color: rgba(255, 255, 255, 0.55); caret-color: #007aff; }
+.cw-light entry selection, .cw-light textview text selection { background-color: rgba(0, 122, 255, 0.3); }
+.cw-light textview, .cw-light textview text { caret-color: #007aff; }
+.cw-light .cw-notes { background-color: rgba(255, 255, 255, 0.4); }
+.cw-light scrollbar slider { background-color: rgba(0, 0, 0, 0.25); }
+.cw-light button.cw-row:hover { background-color: rgba(0, 0, 0, 0.06); }
+.cw-light button.cw-row.active { background-color: rgba(0, 122, 255, 0.22); }
+
+.cw-light .cw-badge.yours { background-color: rgba(0, 122, 255, 0.16); color: #0060d0; }
+.cw-light .cw-badge.machine { background-color: rgba(0, 0, 0, 0.07); color: rgba(0, 0, 0, 0.55); }
+.cw-light button.cw-nav label { color: rgba(0, 0, 0, 0.65); }
+.cw-light button.cw-nav.active { background-color: rgba(255, 255, 255, 0.6); }
+.cw-light button.cw-nav.active label { color: #1d1d1f; }
+.cw-light button.cw-nav:hover { background-color: rgba(0, 0, 0, 0.05); }
+.cw-light.cw-settings switch, .cw-light .cw-settings switch { background-color: rgba(0, 0, 0, 0.12); }
+.cw-light.cw-settings switch:checked, .cw-light .cw-settings switch:checked { background-color: #34c759; }
+.cw-light.cw-settings spinbutton, .cw-light.cw-settings combobox button, .cw-light.cw-settings colorbutton,
+.cw-light.cw-settings button.color {
+  background-color: rgba(255, 255, 255, 0.55);
+}
+.cw-light.cw-settings spinbutton button:hover, .cw-light.cw-settings combobox button:hover { background-color: rgba(0, 0, 0, 0.06); }

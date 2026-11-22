@@ -7,12 +7,8 @@ from typing import Callable
 from gi.repository import Gdk, Gtk, Pango
 
 from ...core.anim import Animator, Spring
-from .. import icons
-from ..draw import mix
-
-OFF_BG = (1.0, 1.0, 1.0, 0.13)
-OFF_BG_HOVER = (1.0, 1.0, 1.0, 0.2)
-ON_ICON = (1.0, 1.0, 1.0, 1.0)
+from .. import icons, theme
+from ..draw import mix, platter_rim
 
 
 class ToggleTile(Gtk.EventBox):
@@ -93,10 +89,17 @@ class ToggleTile(Gtk.EventBox):
         scale = 1.0 - 0.07 * self.press.value
         r = self.size / 2 * scale
         cx, cy = w / 2, h / 2
-        off = mix(OFF_BG, OFF_BG_HOVER, self.hover.value)
+        p = theme.current()
+        off = mix(p.tile_off, p.tile_off_hover, self.hover.value)
         cr.arc(cx, cy, r, 0, 6.283185307)
         cr.set_source_rgba(*mix(off, self.color, self.on.value))
-        cr.fill()
+        cr.fill_preserve()
+        if p.platter_rim:
+            cr.new_path()
+            cr.arc(cx, cy, r - 0.5, 0, 6.283185307)
+            platter_rim(cr, p.platter_rim * (0.7 + 0.3 * self.on.value), cy - r, 2 * r)
+        cr.new_path()
         icon = self.icon if self.active or self.on.value > 0.5 else self.icon_off
-        icons.paint(cr, icon, cx, cy, round(self.size * 0.42), ON_ICON, widget.get_scale_factor())
+        ink = mix(p.tile_icon_off, p.tile_icon_on, self.on.value)
+        icons.paint(cr, icon, cx, cy, round(self.size * 0.42), ink, widget.get_scale_factor())
         return True

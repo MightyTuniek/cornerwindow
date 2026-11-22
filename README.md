@@ -64,6 +64,7 @@ The script:
 
 - Installs any missing distro packages (apt, dnf, pacman or zypper).
 - Asks for sudo once to add a udev rule, so you can control your monitor over I²C without root. For external monitors, turn on DDC/CI in the monitor's own on-screen menu (most ship with it on). If `doctor` says the monitor doesn't answer, that setting is the usual cause.
+- Builds the Liquid Glass pixel kernel if a C compiler is present.
 - Puts `cornerwindow` in `~/.local/bin`.
 - Starts CornerWindow with your session.
 - On GNOME, binds <kbd>Super</kbd>+<kbd>\\</kbd> to open and close it.
@@ -126,7 +127,23 @@ Click the gear button in the panel, or run `cornerwindow settings`. Options are 
 
 ### Theming
 
-To restyle anything, put CSS in `~/.config/cornerwindow/style.css`.
+The island is solid black by default. Switch on **Liquid Glass** with the *Glass* quick toggle, in Settings → Look, or with `cornerwindow set panel.glass true`. The switch applies instantly, without rebuilding the panel.
+
+Liquid Glass is not a blur with a white wash. The panel is a lens over whatever is behind it:
+
+- **Lensing.** Near the rim the backdrop bends inward like a thick convex edge, with a slight colour fringe where it bends most. The middle stays undistorted.
+- **Frost and tint.** These range from clear glass to frosted, and from see-through to legible: `glass.frost` and `glass.tint`.
+- **Specular rim.** A thin white edge plus a soft inner glow, lit from `glass.light_angle`, with a weaker highlight on the far side.
+- **Light and dark.** The appearance follows your desktop's light/dark setting by default (`glass.appearance = "system"`). It can also be forced `light` or `dark`, or set to `adaptive`, which picks by how bright the content behind is. Text, icons and controls switch with it.
+- **The whole surface.** It reaches from the droplet-shaped trigger to the open panel and the Settings window, and a press lights the glass up from the touch point.
+
+The backdrop is live on X11: windows behind the panel are composited with XComposite and XDamage, so a video or a window you drag shows through as it moves. When nothing behind changes, nothing is redrawn. GNOME Shell's own UI is drawn by the compositor and can't be read, so the top bar, the taskbar and notifications show the wallpaper instead. On Wayland the backdrop is the wallpaper only.
+
+The per-pixel work is a small C file compiled on first use (`install.sh` builds it too), so Liquid Glass needs a C compiler (gcc or clang) once. Without one, the toggle hides itself and `cornerwindow doctor` says why.
+
+The panel's corners at the screen edges are set with `panel.ears`: positive values flare outward, negative values round into the panel, and 0 makes them square.
+
+To restyle anything, put CSS in `~/.config/cornerwindow/style.css`. Glass styles are scoped under the `.cw-glass` and `.cw-light` classes.
 
 ## Animation
 

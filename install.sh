@@ -146,7 +146,15 @@ else
   warn "skipped (--no-sudo): brightness/contrast need access to /dev/i2c-*"
 fi
 
-# ── 3. launcher ─────────────────────────────────────────────────────────────
+# ── 3. Liquid Glass kernel (optional: the glass theme hides itself without it) ──
+say "Building the Liquid Glass pixel kernel"
+if PYTHONPATH="$REPO/src" python3 -c 'from cornerwindow import native; native.build(); print(native.library_path())' >/dev/null 2>&1; then
+  ok "built into ~/.cache/cornerwindow"
+else
+  warn "no C compiler (gcc/clang): the Liquid Glass theme stays unavailable"
+fi
+
+# ── 3b. launcher ────────────────────────────────────────────────────────────
 say "Installing launcher"
 mkdir -p "$(dirname "$BIN")"
 cat > "$BIN" <<EOF

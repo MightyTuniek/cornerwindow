@@ -16,11 +16,9 @@ from gi.repository import Gdk, Gtk
 
 from ...core.anim import Animator, Spring, clamp, rubber_band
 from .. import icons
-from ..draw import TRACK, mix, pill, text
+from .. import theme
+from ..draw import mix, pill, platter_rim, text
 
-FILL = (0.96, 0.96, 0.97, 1.0)
-INK_ON_TRACK = (1.0, 1.0, 1.0, 0.92)
-INK_ON_FILL = (0.0, 0.0, 0.0, 0.85)
 INSET = 8.0  # room for rubber-band stretch inside the allocation
 
 
@@ -164,9 +162,10 @@ class PillSlider(Gtk.DrawingArea):
         w = width - 2 * INSET + abs(stretch) + grow
         y = (height - h) / 2
 
+        p = theme.current()
         pill(cr, x, y, w, h)
         cr.clip_preserve()
-        cr.set_source_rgba(*mix(TRACK, (1, 1, 1, 0.18), self.hover.value))
+        cr.set_source_rgba(*mix(p.track, p.track_hover, self.hover.value))
         cr.fill()
 
         fill_w = clamp(self.shown.value) * (w - h) + h if self.shown.value > 0.001 else 0.0
@@ -185,15 +184,20 @@ class PillSlider(Gtk.DrawingArea):
             text(cr, self, label, x + w - h / 2 + 4, y + h / 2, size=12, weight=600,
                  rgba=(rgba[0], rgba[1], rgba[2], rgba[3] * 0.85), align="right")
 
-        on_track = INK_ON_TRACK if not self.dim else (1, 1, 1, 0.45)
+        on_track = p.ink_on_track if not self.dim else p.ink_dim
         ink(on_track)
         if fill_w > 0:
             cr.save()
-            fill_rgba = FILL if not self.dim else (0.6, 0.6, 0.62, 1.0)
+            fill_rgba = p.fill if not self.dim else p.fill_dim
             cr.rectangle(x, y, fill_w, h)
             cr.clip()
             cr.set_source_rgba(*fill_rgba)
             cr.paint()
-            ink(INK_ON_FILL)
+            ink(p.ink_on_fill)
             cr.restore()
+        if p.platter_rim:
+            cr.reset_clip()
+            pill(cr, x + 0.5, y + 0.5, w - 1, h - 1)
+            platter_rim(cr, p.platter_rim * 0.8, y, h)
+            cr.new_path()
         return True

@@ -132,6 +132,16 @@ def test_open_shape_stays_inside_its_box_plus_ears():
         assert -1e-6 <= y <= 310 + 1e-6
 
 
+def test_negative_ears_round_into_the_panel():
+    params = shape.ShapeParams(400, 300, 28, ears=-14, smoothing=0.6)
+    pts = _points(shape.outline(params))
+    for x, y in pts:
+        assert -1e-6 <= x <= 400 + 1e-6 and -1e-6 <= y <= 300 + 1e-6
+    # the panel no longer reaches the screen edges at its far corners
+    assert (400.0, 0.0) not in pts and (0.0, 300.0) not in pts
+    assert (386.0, 0.0) in pts and (0.0, 286.0) in pts
+
+
 def test_corner_transform():
     assert shape.corner_transform("top-right", 100, 50) == (100, 0, -1, 1)
     assert shape.corner_transform("bottom-left", 100, 50) == (0, 50, 1, -1)

@@ -56,6 +56,33 @@ Override any of these on your `Module` subclass:
 
 To add a quick toggle, write a `Toggle` subclass with `@toggle("id")` in [`src/cornerwindow/modules/toggles.py`](../src/cornerwindow/modules/toggles.py).
 
+### Colours and themes
+
+Custom-drawn widgets must not hard-code white. Read the current palette at draw time:
+
+```python
+from cornerwindow.ui import theme
+
+p = theme.current()
+cr.set_source_rgba(*p.track)  # also p.text, p.text_dim, p.fill, p.ink_on_fill, p.tile_off, p.chart …
+```
+
+The three palettes (`BLACK`, `GLASS_DARK`, `GLASS_LIGHT`) live in [`ui/theme.py`](../src/cornerwindow/ui/theme.py). A theme switch is only a redraw, so whatever you draw follows it. CSS follows through the `cw-glass` and `cw-light` classes on the root widget. In glass mode, give bordered things the same outer size as in black: use a 1px border with 1px less padding, so switching never moves anything. Avoid inset `box-shadow`, because GTK3 draws it slowly.
+
+### Liquid Glass internals
+
+- [`native/glass.c`](../src/cornerwindow/native/glass.c) is the per-pixel kernel: libc and libm only, built by [`native/__init__.py`](../src/cornerwindow/native/__init__.py) into `~/.cache/cornerwindow/glass-<hash>.so` and loaded with ctypes. Its entry points:
+  - `cw_edge_field`: distance to the visible edges and smooth normals.
+  - `cw_prepare_backdrop`: quarter-resolution blur.
+  - `cw_shade`: lens, dispersion, tint, specular, press glow.
+
+  Bump `ABI` in both files when you change `cw_params`.
+- [`platform/backdrop/`](../src/cornerwindow/platform/backdrop) supplies what is behind a window:
+  - `x11.py` composites the windows below ours over the wallpaper, live, using a private Xlib connection and ctypes.
+  - `wallpaper.py` is the static fallback.
+- [`ui/glass.py`](../src/cornerwindow/ui/glass.py) turns any cairo outline into kernel inputs and caches every stage, so a settled panel costs nothing until something behind it changes. While a spring runs, the island renders the glass at half resolution and keeps the backdrop still. It catches up once the panel settles.
+- Set `CORNERWINDOW_GLASS_DEBUG=1` to print the time each stage of a glass frame takes.
+
 ### Platform backends
 
 To support new hardware or a new desktop, add a backend under `platform/` behind the existing interface. For example, a new `DisplayBackend` in [`src/cornerwindow/platform/display/`](../src/cornerwindow/platform/display), or KDE support for dark mode in [`src/cornerwindow/platform/desktop/__init__.py`](../src/cornerwindow/platform/desktop/__init__.py).
@@ -79,10 +106,14 @@ src/cornerwindow/
     desktop/        dark mode, do-not-disturb and other desktop settings
     power/          lock, sleep, restart, shut down, sleep inhibit
     sensors/        CPU, GPU, memory, disk and uptime
+    backdrop/       what's behind our windows, for Liquid Glass (live X11 compositing, wallpaper)
     clipboard.py    clipboard access
+  native/           glass.c, the Liquid Glass pixel kernel (built with cc on first use)
   ui/
     island.py       the window: morph, trigger, input shape, gestures, focus
-    shape.py        quarter-circle-to-panel outline with continuous corners and concave ears
+    shape.py        quarter-circle-to-panel outline with continuous corners and screen-edge ears
+    glass.py        Liquid Glass surfaces: outline + backdrop -> lensed, lit glass
+    theme.py        palettes (black, glass dark, glass light) read by every custom-drawn widget
     content.py      card grid with staggered, offscreen-rendered entrance
     widgets/        pill slider, toggle tile, sparkline, hold button, cards
     settings/       the settings window: schema.py (every option), editors.py, window.py

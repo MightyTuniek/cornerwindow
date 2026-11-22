@@ -129,6 +129,18 @@ def run() -> int:
             _line(BAD, "gtk-layer-shell missing", "install gir1.2-gtklayershell-0.1")
             problems += 1
 
+    print("\nLiquid Glass")
+    from . import native
+    from .platform import backdrop
+
+    if native.available():
+        _line(OK, "glass kernel", str(native.library_path()))
+    else:
+        _line(WARN, "glass kernel unavailable", f"{native.error()} (the Glass theme hides itself)")
+    source, detail = backdrop.describe()
+    _line(OK if source == "x11" else WARN, f"backdrop: {source}", detail)
+    _line(OK, "theme", "Liquid Glass" if cfg.get("panel.glass", False) else "black (panel.glass = false)")
+
     print("\nIntegration")
     autostart = Path.home() / ".config/autostart/cornerwindow.desktop"
     _line(OK if autostart.exists() else WARN, "autostart", str(autostart) if autostart.exists() else "run ./install.sh")

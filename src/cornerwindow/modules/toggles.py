@@ -158,6 +158,24 @@ class MicToggle(Toggle):
         tasks.on_main(self.services.audio.set_muted, "source", on, "toggle")
 
 
+@toggle("glass")
+class GlassToggle(Toggle):
+    """The Liquid Glass theme (writes panel.glass, which reloads live)."""
+
+    title, icon, color = "Glass", "glass", (0.35, 0.62, 1.0)
+
+    def available(self) -> bool:
+        from .. import native
+
+        return native.available()  # builds the kernel on first use (worker thread)
+
+    def is_on(self) -> bool:
+        return bool(self.module.ctx.config.get("panel.glass", False))
+
+    def set(self, on: bool) -> None:
+        tasks.on_main(lambda: self.module.ctx.actions.run("theme.glass", on=on))
+
+
 @module("toggles", title="Quick toggles", icon="settings")
 class Toggles(Module):
     def setup(self) -> None:
@@ -223,7 +241,9 @@ class Toggles(Module):
 
         def done(states) -> None:
             for tid, on, _sub in states:
-                self.tiles[tid].set_active(on)
+                tile = self.tiles.get(tid)  # the grid may have been rebuilt meanwhile
+                if tile is not None:
+                    tile.set_active(on)
 
         tasks.run_async(read, done)
 

@@ -98,23 +98,27 @@ class Media(Module):
                                         (ART - self._art.get_height()) / 2)
             cr.paint()
         else:
-            cr.set_source_rgba(1, 1, 1, 0.1)
-            cr.paint()
-            from ..ui import icons
+            from ..ui import icons, theme
 
-            icons.paint(cr, "music", ART / 2, ART / 2, 22, (1, 1, 1, 0.5), widget.get_scale_factor())
+            p = theme.current()
+            cr.set_source_rgba(*p.track)
+            cr.paint()
+            icons.paint(cr, "music", ART / 2, ART / 2, 22, p.text_dim, widget.get_scale_factor())
         return True
 
     def _draw_bar(self, widget, cr) -> bool:
         now = self.now
         w, h = widget.get_allocated_width(), widget.get_allocated_height()
+        from ..ui import theme
+
+        p = theme.current()
         pill(cr, 0, 0, w, h)
-        cr.set_source_rgba(1, 1, 1, 0.14)
+        cr.set_source_rgba(*p.track)
         cr.fill()
         if now and now.length > 0:
             frac = max(0.0, min(1.0, now.position_now() / now.length))
             pill(cr, 0, 0, max(h, w * frac), h)
-            cr.set_source_rgba(1, 1, 1, 0.85)
+            cr.set_source_rgba(*p.text[:3], 0.85)
             cr.fill()
         return True
 

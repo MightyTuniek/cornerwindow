@@ -86,7 +86,12 @@ class CornerWindowApp(Gtk.Application):
                            *[Path(p) for p in self.config.get("modules.search_paths", [])]])
 
         self.actions.register("settings.toggle", self.toggle_settings, "Open / close settings")
+        self.actions.register("theme.glass", self.set_glass, "Liquid Glass theme on / off")
         self._layout()
+        self._apply_theme()
+        if self.services.dark_mode.available():
+            self.services.dark_mode.watch(self._apply_theme)
+        island.on_open_hooks.append(self._adapt_theme)
 
         island.on_open_hooks.append(host.opened)
         island.on_close_hooks.append(host.closed)
@@ -120,7 +125,47 @@ class CornerWindowApp(Gtk.Application):
 
             self.settings = SettingsWindow(self)
             self.add_window(self.settings)
+            self._apply_theme()
         self.settings.toggle()
+
+    # -- theme ----------------------------------------------------------------------------
+    def glass_enabled(self) -> bool:
+        from . import native
+
+        return bool(self.config.get("panel.glass", False)) and native.available()
+
+    def set_glass(self, on: bool | None = None, **_kw) -> str:
+        """Action `theme.glass`: switch the Liquid Glass theme (toggles without `on`)."""
+        if on is None:
+            on = not bool(self.config.get("panel.glass", False))
+        on = bool(on)
+        base = self.config.base.get("panel", {}).get("glass")
+        self.writer.set("panel", "glass", on, base)
+        self.schedule_reload(delay=10)
+        return f"Liquid Glass {'on' if on else 'off'}"
+
+    def _apply_theme(self, luma: float | None = None) -> None:
+        from .ui import theme
+        from .ui.glass import GlassConfig
+
+        glass = self.glass_enabled()
+        dark_mode = self.services.dark_mode
+        system_dark = dark_mode.is_on() if dark_mode.available() else True
+        appearance = str(self.config.get("glass.appearance", "system"))
+        palette = theme.resolve(glass, appearance, system_dark, luma, theme.current())
+        theme.set_current(palette)
+        glass_config = GlassConfig.from_section(self.config.section("glass"))
+        backdrop = self.services.backdrop if glass else None
+        self.island.set_theme(palette, glass_config, backdrop)
+        if self.settings is not None:
+            self.settings.set_theme(palette, glass_config, backdrop)
+
+    def _adapt_theme(self) -> None:
+        """appearance = "adaptive": pick light or dark from what is behind, on every open."""
+        if self.glass_enabled() and self.config.get("glass.appearance", "system") == "adaptive":
+            luma = self.island.glass_luma()
+            if luma is not None:
+                self._apply_theme(luma)
 
     def schedule_reload(self, then=None, external: bool = False, delay: int = 250) -> None:
         """Debounced: many quick edits (dragging a number) cause one reload."""
@@ -140,10 +185,34 @@ class CornerWindowApp(Gtk.Application):
         except Exception:
             _log.exception("Config reload failed; keeping the old one")
             return False
+        theme_only = _without_theme(fresh.data) == _without_theme(self.config.data)
         self.config = fresh
         self.services.reconfigure(fresh)
+        if theme_only:
+            # Switching black <-> glass (or tuning the glass) only repaints: rebuilding
+            # every card would make the panel twitch.
+            for module_id, instance in self.host.instances.items():
+                # new config, same widgets and timers (no configure/build round trip)
+                instance.ctx.config = fresh
+                instance.ctx.section = instance.config = fresh.section(module_id)
+            self.island.apply_config(fresh)
+            self._apply_theme()
+            toggles = self.host.instances.get("toggles")
+            if toggles is not None:
+                toggles.refresh(only=("glass",))
+            self._watch_files()
+            if self.settings is not None:
+                self.settings.after_reload(external)
+            for callback in callbacks:
+                try:
+                    callback()
+                except Exception:
+                    _log.exception("Reload callback failed")
+            _log.info("Theme updated%s", " (edited outside)" if external else "")
+            return False
         self.host.reconfigure(fresh)
         self.island.apply_config(fresh)
+        self._apply_theme()
         self.island.new_grid()
         self._layout()
         self.island.relayout()
@@ -300,3 +369,11 @@ def _hash_of(path: str) -> str:
         return file_hash(Path(path).read_text())
     except OSError:
         return ""
+
+
+def _without_theme(data: dict) -> dict:
+    """The config minus what a theme switch changes (panel.glass and [glass])."""
+    out = {k: v for k, v in data.items() if k != "glass"}
+    if isinstance(out.get("panel"), dict):
+        out["panel"] = {k: v for k, v in out["panel"].items() if k != "glass"}
+    return out

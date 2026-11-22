@@ -87,6 +87,13 @@ class Services:
         return Caffeine()
 
     @cached_property
+    def backdrop(self):
+        """What is behind our windows, for the Liquid Glass theme (live on X11)."""
+        from .platform import backdrop
+
+        return backdrop.create(live=bool(self.config.get("glass.live", True)))
+
+    @cached_property
     def clipboard(self):
         from .platform.clipboard import ClipboardHistory
 
