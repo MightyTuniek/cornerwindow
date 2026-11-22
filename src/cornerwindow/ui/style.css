@@ -284,3 +284,60 @@ window.cw-window {
   background-color: rgba(255, 255, 255, 0.55);
 }
 .cw-light.cw-settings spinbutton button:hover, .cw-light.cw-settings combobox button:hover { background-color: rgba(0, 0, 0, 0.06); }
+
+/* ── dropdown lists (combo box popups) ─────────────────
+   These menus live in their own popup window outside .cw-root, so
+   editors.theme_popup() tags them with .cw-menu and the theme classes. */
+window.cw-popup, window.cw-popup decoration {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+menu.cw-menu {
+  background-color: #000;
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  box-shadow: none;
+  margin: 0;
+  padding: 4px;
+  font-family: "Inter", "SF Pro Text", "Cantarell", sans-serif;
+  font-size: 13px;
+}
+menu.cw-menu menuitem {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  color: #f5f5f7;
+  min-height: 0;
+  padding: 5px 10px;
+  text-shadow: none;
+}
+menu.cw-menu menuitem:hover { background-color: rgba(255, 255, 255, 0.12); }
+menu.cw-menu menuitem label, menu.cw-menu menuitem cellview { color: #f5f5f7; }
+menu.cw-menu arrow {
+  background-color: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  min-height: 16px;
+}
+
+/* glass: no blur behind a popup, so a near-opaque platter with the glass hairline */
+menu.cw-menu.cw-glass {
+  background-color: rgba(30, 30, 32, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.2);
+}
+menu.cw-menu.cw-light {
+  background-color: rgba(246, 246, 248, 0.97);
+  border-color: rgba(0, 0, 0, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.9);
+}
+menu.cw-menu.cw-light menuitem,
+menu.cw-menu.cw-light menuitem label,
+menu.cw-menu.cw-light menuitem cellview { color: #1d1d1f; }
+menu.cw-menu.cw-light menuitem:hover { background-color: rgba(0, 0, 0, 0.06); }
+menu.cw-menu.cw-light arrow { color: rgba(0, 0, 0, 0.45); }

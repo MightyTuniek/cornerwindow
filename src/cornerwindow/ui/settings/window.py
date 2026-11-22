@@ -159,6 +159,7 @@ class SettingsWindow(Gtk.Window):
             "modules": self.app.host.known_ids(),
             "sensors": [f"{s.chip}/{s.label}" for s in sensors.temperature_sensors()],
             "limits": self.app.config.get("display.limits", {}) or {},
+            "background": lambda: self.app.island.bg,
         }
 
     def _page(self, sid: str) -> Gtk.Widget:

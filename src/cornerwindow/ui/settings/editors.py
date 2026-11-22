@@ -9,6 +9,7 @@ from typing import Any, Callable
 from gi.repository import Gdk, Gtk
 
 from ...config_edit import dump_value
+from .. import theme
 from ..widgets import IconButton, chip, label
 from .schema import Field
 
@@ -172,7 +173,40 @@ def _choice(field, value, on_change, ctx) -> Editor:
 
     editor._set = _set
     combo.connect("changed", lambda c: _emit(editor, on_change, c.get_active_id()))
+    theme_popup(combo, ctx)  # before the popup is first realized, so its RGBA visual sticks
+    combo.connect("notify::popup-shown", lambda c, _p: c.get_property("popup-shown") and theme_popup(c, ctx))
     return editor
+
+
+def theme_popup(widget: Gtk.Widget, ctx: dict) -> None:
+    """Give a widget's popup menus (a combo box's list) the panel's look.
+
+    The menu lives in its own toplevel outside `.cw-root`, so it gets `cw-menu` plus the
+    current theme classes, and the black theme's configurable background colour."""
+    palette = theme.current()
+    for menu in Gtk.Menu.get_for_attach_widget(widget):
+        style = menu.get_style_context()
+        for cls in ("cw-menu", "cw-glass", "cw-light"):
+            (style.add_class if cls == "cw-menu" or cls in palette.css_classes else style.remove_class)(cls)
+        top = menu.get_toplevel()
+        if top is not menu:
+            top.get_style_context().add_class("cw-popup")
+            screen = top.get_screen()
+            visual = screen.get_rgba_visual()
+            if visual is not None and screen.is_composited() and top.get_visual() != visual \
+                    and not top.get_realized():
+                top.set_visual(visual)
+        # Refilled on every call: the theme can change between popups, and a stale
+        # black background would sit under glass-light's dark text.
+        provider = getattr(menu, "_cw_bg", None)
+        if provider is None:
+            provider = menu._cw_bg = Gtk.CssProvider()
+            style.add_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        bg = ctx.get("background")
+        css = ""
+        if not palette.glass and bg is not None:
+            css = f"menu.cw-menu {{ background-color: {bg().to_string()}; }}"
+        provider.load_from_data(css.encode())
 
 
 def _entry(on_commit: Callable[[str], None], width: int = 16) -> Gtk.Entry:
