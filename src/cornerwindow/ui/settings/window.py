@@ -40,6 +40,8 @@ class SettingsWindow(Gtk.Window):
         self.nav: dict[str, Gtk.Button] = {}
         self.current = "general"
         self._status_id = 0
+        self._reposition_id = 0
+        self._repositions = 0
 
         self.set_title("CornerWindow settings")
         self.set_app_paintable(True)
@@ -57,6 +59,7 @@ class SettingsWindow(Gtk.Window):
         self.connect("draw", self._draw)
         self.connect("key-press-event", self._key)
         self.connect("focus-out-event", self._focus_out)
+        self.connect("configure-event", self._configured)
         self.connect("delete-event", lambda *_a: self.hide_animated() or True)
 
         self.alpha = Spring(0.0, response=0.26, damping_fraction=1.0, precision=0.002)
@@ -223,9 +226,13 @@ class SettingsWindow(Gtk.Window):
         self.raw.set_monospace(True)
         self.raw.get_style_context().add_class("cw-notes")
         self.raw.set_wrap_mode(Gtk.WrapMode.NONE)
-        self.raw.set_size_request(-1, 260)
         self.raw.get_buffer().set_text(self.app.writer.read_text())
-        box.pack_start(self.raw, False, False, 0)
+        # unwrapped, the longest line would set the whole window's minimum width
+        raw_scroll = Gtk.ScrolledWindow()
+        raw_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        raw_scroll.set_size_request(-1, 260)
+        raw_scroll.add(self.raw)
+        box.pack_start(raw_scroll, False, False, 0)
         actions = Gtk.Box(spacing=6)
         save = Gtk.Button(label="Save file")
         save.get_style_context().add_class("cw-chip")
@@ -339,12 +346,15 @@ class SettingsWindow(Gtk.Window):
         island = self.app.island
         if not island.is_open:
             island.open()
-        right = self._position()
         self.status.set_text(self._default_status())
         self.shown = True
+        self._repositions = 0
         self.set_opacity(0.0)
-        self.show_all()
+        # build the page first so _position() measures the real content width
+        self.get_child().show_all()
         self.show_page(self.current)
+        right = self._position()
+        self.show_all()
         self.present_with_time(Gtk.get_current_event_time())
         self.slide.snap(18.0 if right else -18.0)
         self.slide.to(0.0)
@@ -358,13 +368,45 @@ class SettingsWindow(Gtk.Window):
         geometry = island._monitor().get_geometry()
         height = int(max(520, min(rect.height, geometry.height - 2 * GAP, 820)))
         right = island.corner.endswith("right")
-        x = rect.x - GAP - WIDTH if right else rect.x + rect.width + GAP
+        # free space between the panel and the far screen edge, minus a gap on both sides
+        if right:
+            avail = rect.x - geometry.x - 2 * GAP
+        else:
+            avail = geometry.x + geometry.width - (rect.x + rect.width) - 2 * GAP
+        # GTK grows the window to its content's minimum width, so place it by the width it
+        # will really have. If that doesn't fit beside the panel, scroll sideways instead.
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        need = max(WIDTH, self.get_preferred_width()[0])
+        if need > avail:
+            self.scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            need = max(min(WIDTH, avail), self.get_preferred_width()[0])
+        width = int(need)
+        x = rect.x - GAP - width if right else rect.x + rect.width + GAP
         y = rect.y + (GAP if island.corner.startswith("top") else rect.height - height - GAP)
         y = max(geometry.y, min(y, geometry.y + geometry.height - height))
-        self.set_default_size(WIDTH, height)
-        self.resize(WIDTH, height)
+        self._placed = (int(x), int(y), width, height)
+        self.set_default_size(width, height)
+        self.resize(width, height)
         self.move(int(x), int(y))
         return right
+
+    def _configured(self, _w, event) -> bool:
+        """Re-dock when the window ends up somewhere else than planned, e.g. a lazily built
+        page made it wider, or the window manager placed it on its own."""
+        planned = getattr(self, "_placed", None)
+        # a few tries per opening, so we never fight a window manager that insists
+        if self.shown and planned and not self._reposition_id and self._repositions < 4:
+            x, _y, width, _h = planned
+            if event.width != width or (event.send_event and event.x != x):
+                def again() -> bool:
+                    self._reposition_id = 0
+                    if self.shown:
+                        self._position()
+                    return False
+
+                self._repositions += 1
+                self._reposition_id = GLib.idle_add(again)
+        return False
 
     def hide_animated(self) -> None:
         if not self.shown:
