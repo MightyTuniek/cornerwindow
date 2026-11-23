@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
@@ -40,8 +40,10 @@ def score(query: str, entry: AppEntry) -> float:
     return 0.0
 
 
-def rank_apps(query: str, entries: list[AppEntry], limit: int = 5) -> list[AppEntry]:
+def rank_apps(query: str, entries: list[AppEntry], limit: int = 5,
+              bonus: Callable[[AppEntry], float] | None = None) -> list[AppEntry]:
+    """`bonus(entry)` is added to every match (the command bar's "used often lately")."""
     scored = [(score(query, e), e) for e in entries]
-    scored = [(s, e) for s, e in scored if s > 0]
+    scored = [(s + (bonus(e) if bonus else 0.0), e) for s, e in scored if s > 0]
     scored.sort(key=lambda se: (-se[0], se[1].name.lower()))
     return [e for _s, e in scored[:limit]]

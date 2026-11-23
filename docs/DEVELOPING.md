@@ -27,6 +27,19 @@ class UptimeCard(Module):
         return [Command(("up", "uptime"), "Uptime", "up", lambda _arg: self.text.get_text())]
 ```
 
+### Command bar entries
+
+`Command(keywords, title, usage, run, takes_arg)` is all a command needs; `run(arg)` returns the feedback text. It shows up in the bar's **?** list under the module's title automatically, with the first `usage` example (examples are separated by ` · `) as the text a click puts in the bar. Optional extras:
+
+| Field | Purpose |
+|---|---|
+| `suggest=fn(arg)` | Live rows once the keyword is typed in full: return a list of `Suggestion(title, detail, run, icon, closes, complete)` (the clipboard's `cb` lists matching entries this way) |
+| `confirm=True` | The row needs <kbd>Enter</kbd> twice (restart, shut down) |
+| `group="…"` | A different heading in the ? list |
+| `icon="…"` | Row icon; defaults to the module's |
+
+Pure parsing for the bar lives in `core/`: `calc.py` (maths, units, bases, currencies), `clock.py` (times, zones, dates), `cmdline.py` (shell lines, paths, URLs, search shortcuts, file ranking), `history.py` (recents and frecency) and `emoji.py`.
+
 ### Context
 
 Everything a module needs is on `self.ctx`:
@@ -99,7 +112,8 @@ src/cornerwindow/
   services.py       lazy service container (ctx.services)
   doctor.py         `cornerwindow doctor`
   core/             springs (anim), event bus, workers (tasks), live activities, actions, state,
-                    calc (sums and unit conversion), launcher (app ranking), dates (month grids)
+                    calc (sums, units, bases, currencies), clock (times, zones, dates), cmdline
+                    (command-bar parsing), history (recents), emoji, launcher (app ranking), dates (month grids)
   platform/         all OS access, behind small interfaces with probing
     display/        native DDC/CI (ddc_i2c), ddcutil, laptop backlight, xrandr gamma, night light
     audio/          wpctl (PipeWire), pactl (PulseAudio)
@@ -144,7 +158,7 @@ The tests cover:
 - DDC/CI packet encoding and checksums, display limits (also per monitor)
 - the wpctl, ddcutil, pw-dump, pactl, nmcli, UPower and MPD parsers
 - media: site detection for browser tabs, player ranking, seek parsing
-- the calculator, unit conversion, app ranking, timer and stopwatch, month grids
+- the calculator, unit and currency conversion, times and dates, command-bar parsing and history, emoji search, app ranking, timer and stopwatch, month grids
 - hiding and restoring the taskbar, matching windows to apps, the Apps card's order and cycling
 - Open-Meteo forecast and geocoder parsing
 - module loading

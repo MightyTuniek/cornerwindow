@@ -156,7 +156,11 @@ class ModuleHost:
         out: list[Command] = []
         for instance in self.shown():
             try:
-                out.extend(instance.commands())
+                for command in instance.commands():
+                    # the class attributes: some modules reuse self.title for a widget
+                    command.group = command.group or str(type(instance).title)
+                    command.icon = command.icon or str(type(instance).icon)
+                    out.append(command)
             except Exception:
                 _log.exception("%s.commands failed", instance.id)
         return out

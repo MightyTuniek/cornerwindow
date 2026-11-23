@@ -4,7 +4,7 @@ The cards inside the open panel. The id is what goes in `[modules]` in the confi
 
 | Card | Id | Contents |
 |---|---|---|
-| Command bar | `commandbar` | Type to open apps, switch to open windows, run commands, calculate, convert units (`5 km to mi`) and search the web (top row) |
+| Command bar | `commandbar` | One bar for everything (top row): open apps (most used first) and switch windows, open files, folders (Tab completes) and websites, find files (`f name`), run shell commands (`> cmd`, `>> cmd` in a terminal), every card's commands, calculate (percentages, hex/binary), convert units and currencies (`100 usd to eur`), times and dates (`time in tokyo`, `days until dec 25`), alarms, emoji (`:heart`), clipboard and notes search, power commands (restart/shut down need Enter twice), search shortcuts (`yt lofi`), recents on ↑, web search; the **?** button lists all of it |
 | Apps | `windows` | Favourite and running apps, grouped by app: click to switch (or minimise the app you're in), window list for apps with several windows, middle-click for a new window, orange dot on the trigger when a window asks for attention; shown while `[experimental] hide_taskbar` is on, or always with `[windows] show = "always"`; X11 only (top row) |
 | Display | `display` | Brightness and contrast over DDC/CI, presets, night light; per-monitor brightness sliders when unlinked |
 | Sound | `audio` | Volume slider, mic mute, output device switcher; under "Microphone & apps": mic level, input device switcher, per-app volume |

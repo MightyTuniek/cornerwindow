@@ -72,9 +72,20 @@ hidden = []                   # switched off: they keep their place above but ar
 search_paths = []             # extra folders with your own module .py files
 
 [commandbar]
+always_show = true            # keep the bar (and its ? button) visible; false = it appears when you type
 apps = true                   # typing an app's name offers to open it
 windows = true                # ...and to switch to its open windows
+path_programs = true          # "htop" offers to run a program from your PATH in a terminal
+terminal = ""                 # for ">> cmd" and PATH programs: "kitty", "konsole"…; "" = first one installed
 search_url = "https://duckduckgo.com/?q={}"   # last row: search the web ({} = what you typed; "" = off)
+currency_url = "https://api.frankfurter.dev/v1/latest?base=EUR"   # "100 usd to eur" (fetched when asked, cached 12 h; "" = off)
+
+[commandbar.engines]          # search shortcuts: "yt lofi" searches YouTube ({} = the rest of the line)
+g = "https://www.google.com/search?q={}"
+yt = "https://www.youtube.com/results?search_query={}"
+w = "https://en.wikipedia.org/wiki/Special:Search?search={}"
+gh = "https://github.com/search?q={}"
+maps = "https://www.openstreetmap.org/search?query={}"
 
 [display]
 backend = "auto"              # auto | ddc | ddcutil | backlight | gamma   (or a list, in order)

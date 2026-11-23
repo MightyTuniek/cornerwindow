@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import time
 
 from gi.repository import GLib, Gtk
 
+from ..core import clock
 from ..core.activity import ORANGE
 from ..platform import proc
 from ..ui.widgets import IconButton, chip, label
-from .base import Command, Module, module
+from .base import Command, Module, Suggestion, module
 
 SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 
@@ -19,6 +21,7 @@ class Timer(Module):
     def setup(self) -> None:
         self.duration = 0.0
         self.ends_at: float | None = None
+        self.alarm = ""  # "07:30" when the countdown is an alarm
         self.paused_left: float | None = None
         self._tick_id = 0
         self.ctx.actions.register("timer.toggle", self.toggle_pause, "Pause / resume timer")
@@ -31,7 +34,8 @@ class Timer(Module):
             return 0.0
         return max(self.ends_at - time.monotonic(), 0.0)
 
-    def start(self, seconds: float) -> str:
+    def start(self, seconds: float, alarm: str = "") -> str:
+        self.alarm = alarm
         self.duration = seconds
         self.ends_at = time.monotonic() + seconds
         self.paused_left = None
@@ -91,7 +95,11 @@ class Timer(Module):
         self.duration = 0
         self.ctx.activity.clear("timer")
         self.ctx.activity.show("timer.done", dot=True, label="0:00", color=ORANGE, timeout=6, radius=40)
-        self.ctx.notify("Timer finished", f"{_fmt(total)} is up", "alarm-symbolic")
+        if self.alarm:
+            self.ctx.notify(f"Alarm {self.alarm}", "It's time", "alarm-symbolic")
+        else:
+            self.ctx.notify("Timer finished", f"{_fmt(total)} is up", "alarm-symbolic")
+        self.alarm = ""
         if proc.which("canberra-gtk-play"):
             proc.spawn(["canberra-gtk-play", "-i", "alarm-clock-elapsed"])
         elif proc.which("pw-play"):
@@ -151,7 +159,48 @@ class Timer(Module):
                 return "Usage: timer 10 · timer 90s · timer 1h"
             return self.start(seconds)
 
-        return [Command(("timer", "t"), "Timer", "timer 10 (minutes)", run, True)]
+        def alarm_target(arg: str):
+            tod = clock.parse_time_of_day(arg)
+            if tod is None:
+                return None
+            return tod, clock.seconds_until(tod[0], tod[1], dt.datetime.now())
+
+        def alarm(arg: str) -> str:
+            found = alarm_target(arg)
+            if found is None:
+                return "Usage: alarm 7:30 · alarm 7pm"
+            (hour, minute), seconds = found
+            self.start(seconds, alarm=f"{hour:02d}:{minute:02d}")
+            return f"Alarm {hour:02d}:{minute:02d}, in {_human(seconds)}"
+
+        def alarm_rows(arg: str) -> list[Suggestion]:
+            found = alarm_target(arg)
+            if found is None:
+                hint = "Type a time: 7:30, 19:30, 7pm, noon"
+                return [Suggestion(hint, "", lambda: None, "alarm")]
+            (hour, minute), seconds = found
+            return [Suggestion(f"Alarm at {hour:02d}:{minute:02d}", f"in {_human(seconds)}",
+                               lambda a=arg: alarm(a), "alarm")]
+
+        def timer_rows(arg: str) -> list[Suggestion]:
+            arg = arg.strip().lower()
+            if arg in ("stop", "cancel"):
+                return [Suggestion("Cancel the timer", "", lambda: run(arg), "clear")]
+            if not arg:
+                running = self.ends_at is not None or self.paused_left is not None
+                if running:
+                    return [Suggestion(f"Pause / resume timer ({_fmt(self.left())} left)", "",
+                                       lambda: run(""), "pause")]
+                return [Suggestion("Type a length: 10 (minutes), 90s, 1h30m", "", lambda: None, "timer")]
+            seconds = _parse_duration(arg)
+            if seconds is None:
+                return [Suggestion("Type a length: 10 (minutes), 90s, 1h30m", "", lambda: None, "timer")]
+            return [Suggestion(f"Start a {_human(seconds)} timer", "", lambda a=arg: run(a), "timer")]
+
+        return [Command(("timer", "t"), "Timer", "timer 10 · t 90s · timer 1h30m · timer stop", run, True,
+                        suggest=timer_rows),
+                Command(("alarm",), "Alarm at a time of day", "alarm 7:30 · alarm 7pm", alarm, True,
+                        suggest=alarm_rows)]
 
 
 def _parse_duration(text: str) -> float | None:
@@ -181,3 +230,18 @@ def _fmt(seconds: float) -> str:
     hours, rem = divmod(seconds, 3600)
     minutes, secs = divmod(rem, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def _human(seconds: float) -> str:
+    """5400 -> '1 h 30 min'; 90 -> '1 min 30 s'."""
+    seconds = int(round(seconds))
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours} h")
+    if minutes:
+        parts.append(f"{minutes} min")
+    if secs and not hours:
+        parts.append(f"{secs} s")
+    return " ".join(parts) or "0 s"

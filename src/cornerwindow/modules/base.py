@@ -12,7 +12,8 @@ A module may also:
   * setup()            register actions/commands/subscriptions (runs once, even if not built)
   * configure()        read self.config; runs after setup() and again whenever settings change
   * on_open/on_close   panel lifecycle; start/stop work here
-  * commands()         command-bar entries, e.g. Command(("b", "brightness"), ...)
+  * commands()         command-bar entries, e.g. Command(("b", "brightness"), ...); they're
+                       listed in the bar's help (?) automatically
   * self.ctx.every(1.0, fn)   a timer that only runs while the panel is open
 
 Everything a module needs is on `self.ctx` (see ModuleContext).
@@ -39,14 +40,37 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class Suggestion:
+    """One live row a command offers for what was typed after its keyword ("cb pass" -> the
+    matching clipboard entries). `run()` returns feedback text (or None)."""
+
+    title: str
+    detail: str = ""
+    run: Callable[[], str | None] = lambda: None
+    icon: Any = None  # an icon name or a Gio.Icon
+    closes: bool = False  # True: close the panel after running it
+    complete: str | None = None  # Tab puts this text in the bar
+
+
+@dataclass
 class Command:
-    """A command-bar entry. `run(arg)` returns feedback text (or None)."""
+    """A command-bar entry. `run(arg)` returns feedback text (or None).
+
+    * usage     examples separated by " · "; the first one fills the bar from the help list
+    * suggest   fn(arg) -> [Suggestion]: live rows once the keyword is typed in full
+    * confirm   needs Enter twice (restart, shut down)
+    * group     heading in the help list; defaults to the module's title
+    """
 
     keywords: tuple[str, ...]
     title: str
     usage: str = ""
     run: Callable[[str], str | None] = lambda _arg: None
     takes_arg: bool = False
+    suggest: Callable[[str], list[Suggestion]] | None = None
+    confirm: bool = False
+    group: str = ""
+    icon: str = ""
 
     def matches(self, word: str) -> bool:
         word = word.lower()

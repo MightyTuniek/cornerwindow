@@ -6,7 +6,7 @@ from gi.repository import Gtk, Pango
 
 from ..core.activity import GREEN
 from ..ui.widgets import IconButton, label
-from .base import Module, module
+from .base import Command, Module, Suggestion, module
 
 
 @module("clipboard", title="Clipboard", area="drawer", icon="copy", description="Recent clipboard text, click to copy again")
@@ -61,3 +61,28 @@ class Clipboard(Module):
         self.history.copy(text)
         self.ctx.activity.show("clipboard", dot=True, color=GREEN, timeout=0.9)
         self.ctx.island.close()
+
+    def commands(self) -> list[Command]:
+        def matching(arg: str) -> list[str]:
+            words = arg.lower().split()
+            return [t for t in self.history.items if all(w in t.lower() for w in words)]
+
+        def suggest(arg: str) -> list[Suggestion]:
+            items = matching(arg)
+            if not items:
+                return [Suggestion("Nothing in the clipboard history matches" if arg.strip()
+                                   else "The clipboard history is empty", "", lambda: None, "copy")]
+            return [Suggestion(" ".join(t.split())[:120], "Copy", lambda t=t: self._copy_from_bar(t), "copy")
+                    for t in items[:8]]
+
+        def run(arg: str) -> str:
+            items = matching(arg)
+            return self._copy_from_bar(items[0]) if items else "No match"
+
+        return [Command(("cb", "clipboard"), "Search clipboard history", "cb · cb password", run, True,
+                        suggest=suggest)]
+
+    def _copy_from_bar(self, text: str) -> str:
+        self.history.copy(text)
+        self.ctx.activity.show("clipboard", dot=True, color=GREEN, timeout=0.9)
+        return "Copied"

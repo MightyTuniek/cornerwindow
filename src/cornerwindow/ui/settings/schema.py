@@ -114,11 +114,18 @@ SECTIONS: list[Section] = [
           min=0.2, max=10, step=0.1, digits=1, unit="×"),
     ]),
     Section("commandbar", "Command bar", "search", [
+        F("always_show", "Always show the bar", "bool", "Off: it slides in when you start typing."),
         F("apps", "Find apps", "bool", "Type an app's name and press Enter to open it."),
         F("windows", "Switch to open windows", "bool", "Typing an app's name or a window title also "
           "offers its open windows."),
+        F("path_programs", "Offer programs from PATH", "bool", "Typing “htop” offers to run it in a terminal."),
+        F("terminal", "Terminal", "text", "For “>> command”: kitty, konsole, gnome-terminal… Empty = the "
+          "first one installed."),
         F("search_url", "Web search", "text", "{} is replaced by what you typed. Empty = no web row."),
-    ], "Start typing anywhere in the open panel. Also: sums (2*21) and units (5 km to mi)."),
+        F("engines", "Search shortcuts", "dict", "Shortcut → search URL. “yt lofi” searches YouTube."),
+        F("currency_url", "Exchange rates", "text", "Fetched only when you type a currency conversion, then "
+          "cached for 12 hours. Empty = off."),
+    ], "Start typing anywhere in the open panel, or press ? in the bar to see everything it can do."),
     Section("display", "Display", "brightness", [
         F("limits", "Maximum", "limits", "Nothing can go above this: sliders, presets, scrolling, commands."),
         F("presets", "Presets", "presets", "Click a preset in the island to apply it; hold it there to save current values."),

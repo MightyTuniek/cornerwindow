@@ -138,6 +138,17 @@ window.cw-window {
 }
 .cw-root button.cw-row:hover { background-color: rgba(255, 255, 255, 0.09); }
 .cw-root button.cw-row.active { background-color: rgba(10, 132, 255, 0.32); }
+.cw-root button.cw-row.cw-confirm, .cw-root button.cw-row.cw-confirm.active { background-color: rgba(255, 69, 58, 0.45); }
+.cw-root button.cw-row label.cw-answer { font-weight: 600; font-size: 15px; }
+
+/* ── command bar help (?) ──────────────────────────── */
+.cw-root scrolledwindow.cw-help { background-color: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 4px 4px 6px 4px; }
+.cw-help-head { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.55);
+  margin: 8px 0 2px 9px; }
+.cw-root button.cw-row.cw-help-row { padding: 3px 9px; }
+.cw-help-example { font-family: monospace; font-size: 12px; }
+.cw-root label.cw-key { font-family: monospace; font-size: 11px; background-color: rgba(255, 255, 255, 0.12);
+  border-radius: 5px; padding: 0 5px; }
 
 /* ── apps (the taskbar in the panel) ───────────────── */
 .cw-apps flowboxchild { padding: 0; background-color: transparent; }

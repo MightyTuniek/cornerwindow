@@ -65,22 +65,35 @@ The taskbar comes back when you switch the setting off and when CornerWindow qui
 
 #### Command bar
 
-Start typing anywhere in the open panel:
+Start typing anywhere in the open panel, or click the bar. The **?** button at its right end (or typing `?`) opens a scrollable list of everything below; click an example to put it in the bar.
 
 | Input | Effect |
 |---|---|
-| `firefox` | Switch to Firefox if it's open, or open it (any installed app, by name or keyword) |
+| `firefox` | Switch to Firefox if it's open, or open it (any installed app; the ones you open most come first) |
+| `~/Downloads` | Open a file or folder; <kbd>Tab</kbd> completes the path |
+| `github.com` | Open a website |
+| `f invoice` | Find files by name (uses `plocate` if installed); <kbd>Shift</kbd>+<kbd>Enter</kbd> opens the folder |
+| `> ls ~` | Run a shell command; its last line of output shows in the bar |
+| `>> htop` | Run a command in a terminal (`htop` alone offers this for any program on your PATH) |
+| `yt lofi` | Search shortcuts: `g`, `yt`, `w` (Wikipedia), `gh`, `maps`, or your own in Settings → Command bar |
 | `b 40` | Set brightness to 40 (`b 40 2` sets only the second monitor) |
 | `night` | Apply the Night preset |
-| `timer 10` | Start a 10-minute timer |
+| `timer 10` | Start a 10-minute timer (`t 90s`, `timer 1h30m`, `timer stop`) |
+| `alarm 7:30` | Ring at a time of day (`alarm 7pm`) |
 | `sw` | Start or pause the stopwatch |
 | `seek +30` | Skip ahead in what's playing (`seek 1:20`, `shuffle`, `repeat`, `player spotify`) |
 | `bt headphones` | Connect a paired Bluetooth device |
-| `5 km to mi` | Convert units: length, weight, volume, speed, temperature, data, time |
-| `2*(3+4)` | Calculate; <kbd>Enter</kbd> copies the answer |
+| `cb pass` | Search the clipboard history; <kbd>Enter</kbd> copies |
+| `note buy milk` | Add a line to Notes (`note milk` also finds lines) |
+| `restart` | `lock`, `sleep`, `logout`, `restart`, `shutdown`; the last three need <kbd>Enter</kbd> twice |
+| `2*(3+4)` | Calculate; <kbd>Enter</kbd> copies the answer. Also `15% of 80`, `80 + 15%`, `0xff to bin`, `1<<4` |
+| `5 km to mi` | Convert units: length, weight, volume, area, speed, temperature, data, time |
+| `100 usd to eur` | Convert currencies (ECB daily rates from frankfurter.dev, fetched only when you ask) |
+| `time in tokyo` | Times and dates: `3pm london to tokyo`, `now + 90m`, `days until dec 25`, `today`, `week`, `@1700000000` |
+| `:heart` | Emoji and symbols (`:arrow`, `:degree`); <kbd>Enter</kbd> copies |
 | anything else | Search the web (DuckDuckGo by default, set in Settings → Command bar) |
 
-`c`, `v`, `t`, `mute`, `lock`, `eject`, `battery`, `weather`, `settings` and more are in the command bar too.
+<kbd>↑</kbd> in an empty bar brings back what you ran before (`forget` clears it). `c`, `v`, `mute`, `eject`, `battery`, `weather`, `settings` and more are in the command bar too.
 
 ## Install
 

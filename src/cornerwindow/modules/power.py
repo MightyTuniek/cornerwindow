@@ -40,5 +40,19 @@ class Power(Module):
         return card
 
     def commands(self) -> list[Command]:
-        # Only lock is offered as a typed command; the destructive ones need the hold gesture.
-        return [Command(("lock",), "Lock screen", "lock", lambda _a: self._run("lock"))]
+        # Lock and sleep run at once; the ones that close your apps need Enter twice in the bar,
+        # the typed equivalent of the hold gesture.
+        def runner(key: str):
+            def run(_arg: str) -> str:
+                self._run(key)
+                return ACTIONS[key][1]
+            return run
+
+        return [
+            Command(("lock",), "Lock screen", "lock", runner("lock"), icon="lock"),
+            Command(("sleep", "suspend"), "Sleep", "sleep", runner("suspend"), icon="suspend"),
+            Command(("logout", "signout"), "Log out", "logout", runner("logout"), confirm=True, icon="logout"),
+            Command(("restart", "reboot"), "Restart", "restart", runner("reboot"), confirm=True, icon="reboot"),
+            Command(("shutdown", "poweroff"), "Shut down", "shutdown", runner("poweroff"), confirm=True,
+                    icon="poweroff"),
+        ]

@@ -90,6 +90,15 @@ FALLBACKS = {
     "close": ("window-close-symbolic", "edit-delete-symbolic"),
     "desktop": ("user-desktop-symbolic", "preferences-desktop-wallpaper-symbolic"),
     "experimental": ("applications-science-symbolic", "flag-symbolic", "emblem-important-symbolic"),
+    "help": ("dialog-question-symbolic", "help-faq-symbolic", "help-browser-symbolic"),
+    "terminal": ("utilities-terminal-symbolic", "system-run-symbolic"),
+    "file": ("text-x-generic-symbolic", "document-open-symbolic"),
+    "emoji": ("face-smile-symbolic", "emoji-people-symbolic"),
+    "alarm": ("alarm-symbolic", "preferences-system-time-symbolic"),
+    "calc": ("accessories-calculator-symbolic", "applications-science-symbolic"),
+    "history": ("document-open-recent-symbolic", "view-history-symbolic"),
+    "money": ("money-symbolic", "accessories-calculator-symbolic"),
+    "link": ("insert-link-symbolic", "web-browser-symbolic"),
 }
 
 DRAWN = {"sun", "contrast", "caffeine-cup", "glass"}
