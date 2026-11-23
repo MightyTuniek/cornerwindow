@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 _log = log.get("settings")
 WIDTH = 480
+MIN_HEIGHT = 520  # a near-empty panel still gets a usable settings window
 GAP = 12
 RADIUS = 24
 
@@ -62,6 +63,7 @@ class SettingsWindow(Gtk.Window):
         self.connect("key-press-event", self._key)
         self.connect("focus-out-event", self._focus_out)
         self.connect("configure-event", self._configured)
+        app.island.on_geometry.append(self._follow_panel)
         self.connect("delete-event", lambda *_a: self.hide_animated() or True)
 
         self.alpha = Spring(0.0, response=0.26, damping_fraction=1.0, precision=0.002)
@@ -303,10 +305,16 @@ class SettingsWindow(Gtk.Window):
         self.app.schedule_reload(then=self.refresh)
 
     # == sync from config ================================================================
-    def after_reload(self, external: bool) -> None:
-        """Called by the app after every reload; external = a file was edited elsewhere."""
+    def _follow_panel(self) -> None:
+        """The island's panel changed size or place (cards added, the Apps strip shown when the
+        taskbar is hidden, another corner or monitor): re-dock to match it."""
         if self.shown:
+            self._repositions = 0
             self._position()
+
+    def after_reload(self, external: bool) -> None:
+        """Called by the app after every reload; external = a file was edited elsewhere.
+        Size and place follow the panel through _follow_panel, whenever it really changes."""
         if external:
             self.refresh()
         else:
@@ -393,7 +401,10 @@ class SettingsWindow(Gtk.Window):
         island = self.app.island
         rect = island.panel_rect()
         geometry = island._monitor().get_geometry()
-        height = int(max(520, min(rect.height, geometry.height - 2 * GAP, 820)))
+        # inset by GAP at the screen edge and flush with the panel's far edge; it follows every
+        # change of the panel through _follow_panel, and is only
+        # kept usable on a tiny panel and on screen
+        height = int(min(max(rect.height - GAP, MIN_HEIGHT), geometry.height - 2 * GAP))
         right = island.corner.endswith("right")
         # free space between the panel and the far screen edge, minus a gap on both sides
         if right:

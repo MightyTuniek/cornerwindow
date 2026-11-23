@@ -57,6 +57,11 @@ class Island(Gtk.Window):
         self.on_type: Callable[[str], bool] | None = None
         self.on_escape: list[Callable[[], bool]] = []  # return True to swallow Esc
         self.keep_open: list[Callable[[], bool]] = []  # e.g. "the settings window has focus"
+        # Windows docked to the panel (settings, anything added later) follow it through these:
+        # called after every change of panel_rect() (size, corner, monitor), never assumed.
+        self.on_geometry: list[Callable[[], None]] = []
+        self._geometry_key: tuple | None = None
+        self._geometry_idle = 0
         self._opened_at = 0.0
         self._leave_timer = 0
         self._hover_timer = 0
@@ -129,6 +134,9 @@ class Island(Gtk.Window):
         display = Gdk.Display.get_default()
         display.connect("monitor-added", lambda *_: GLib.timeout_add(500, self._replace))
         display.connect("monitor-removed", lambda *_: GLib.timeout_add(500, self._replace))
+        screen = self.get_screen()
+        if screen is not None:  # resolution or scale changes
+            screen.connect("size-changed", lambda *_: GLib.timeout_add(200, self._replace))
 
     # == configuration ================================================================
     def _read_config(self, config: Config) -> None:
@@ -291,6 +299,33 @@ class Island(Gtk.Window):
         self.anim.kick()
         self.queue_draw()
 
+    def _geometry_changed(self) -> None:
+        """Tell docked windows that panel_rect() moved or resized: coalesced to one call per
+        main-loop turn, and only when something actually differs."""
+        if self._geometry_idle:
+            return
+
+        def emit() -> bool:
+            self._geometry_idle = 0
+            try:
+                rect = self.panel_rect()
+                geometry = self._monitor().get_geometry()
+            except Exception:
+                return False
+            key = (rect.x, rect.y, rect.width, rect.height, self.corner,
+                   geometry.x, geometry.y, geometry.width, geometry.height)
+            if key == self._geometry_key:
+                return False
+            self._geometry_key = key
+            for hook in list(self.on_geometry):
+                try:
+                    hook()
+                except Exception:
+                    _log.exception("Geometry hook failed")
+            return False
+
+        self._geometry_idle = GLib.idle_add(emit)
+
     def panel_rect(self) -> Gdk.Rectangle:
         """Where the open panel sits on screen (for placing the settings window beside it)."""
         geometry = self._monitor().get_geometry()
@@ -325,6 +360,7 @@ class Island(Gtk.Window):
         self.backend.place(self, self.corner, geometry, self.win_w, self.win_h)
         _log.debug("Placed %dx%d at %s of %dx%d", self.win_w, self.win_h, self.corner,
                    geometry.width, geometry.height)
+        self._geometry_changed()
 
     def _replace(self) -> bool:
         self.place()
@@ -336,6 +372,7 @@ class Island(Gtk.Window):
         height = min(alloc.height + 2 * self.pad, getattr(self, "max_panel_h", 2000))
         if abs(height - self.panel_h) >= 1 and alloc.height > 1:
             self.panel_h = height
+            self._geometry_changed()
             if self.is_open:
                 self.h.to(height)
                 self.anim.kick()
