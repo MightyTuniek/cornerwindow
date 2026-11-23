@@ -55,6 +55,8 @@ The trigger stays almost invisible.
 | Apps | Your favourite and running apps, a taskbar inside the panel (shown while the taskbar is hidden, see below) |
 | Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code and Codex: tokens today, the 5-hour window and when it resets, plan limits, which project an agent is working in, from their local logs), **Power** (a card instead of the clock's button) |
 
+**More cards than fit.** A column taller than the screen scrolls on its own (the command bar stays put) and fades out at the end that has more; sliders and the calendar keep using the scroll wheel for themselves. The Features page warns about a column that scrolls, and a card you switch on goes to the column with the most room.
+
 **Only what matters right now.** Notifications, Downloads, Updates, Battery, Drives and Now playing hide themselves while they have nothing to show, so on a quiet day the panel is just Display, Sound, the clock, your toggles and the drawer. The drawer opens on a running timer or stopwatch.
 
 **Tools** add commands to the bar without adding a card:
@@ -237,7 +239,7 @@ To restyle anything, put CSS in `~/.config/cornerwindow/style.css`. Glass styles
 
 - Every movement uses spring physics (SwiftUI-style `response`/`damping`), driven by the frame clock at your monitor's refresh rate.
 - Springs keep their velocity, so clicking again mid-animation reverses it smoothly instead of snapping.
-- The window is never resized or moved while animating. It is sized once, everything outside the outline is transparent and click-through, and only the outline is redrawn.
+- The window is never resized or moved while animating. It is sized once, everything outside the outline is transparent and click-through, and only the outline is redrawn. The panel never grows past the screen: a column that would scrolls instead.
 - During the morph, each card is drawn once into an offscreen image and then just blended in. Nothing is laid out again mid-animation.
 - Sliders follow the pointer exactly and stretch with a rubber-band effect at the ends. Hardware catches up in the background through a writer that only sends the latest value, so dragging never lags.
 - Nothing ticks while the panel is collapsed, so idle CPU use is 0%. Notifications and downloads are watched by the session bus and the file system, which cost nothing until something happens. The only exceptions are ones you ask for: Alerts (a check every 15 s) and a timed Awake (one timer).

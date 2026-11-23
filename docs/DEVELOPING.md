@@ -166,7 +166,8 @@ src/cornerwindow/
     shape.py        quarter-circle-to-panel outline with continuous corners and screen-edge ears
     glass.py        Liquid Glass surfaces: outline + backdrop -> lensed, lit glass
     theme.py        palettes (black, glass dark, glass light) read by every custom-drawn widget
-    content.py      card grid with staggered, offscreen-rendered entrance
+    content.py      card grid with staggered, offscreen-rendered entrance; each column scrolls only when
+                    taller than the screen (ColumnScroller), cards are clipped to it during the morph
     snapshot.py     offscreen pictures of our windows (`cornerwindow snapshot`, scripts/screenshots.py)
     widgets/        pill slider, toggle tile, sparkline, hold button, cards
     settings/       the settings window: schema.py (every option), editors.py, layout_editor.py

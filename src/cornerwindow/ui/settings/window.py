@@ -160,6 +160,7 @@ class SettingsWindow(Gtk.Window):
             "actions": self.app.actions.names(),
             "modules": self.app.host.known_ids(),
             "catalog": self.app.host.catalog,
+            "column_fit": lambda: self.app.island.grid.column_fit() if self.app.island.grid else [],
             "choices": _switchlist_choices,
             "sensors": [f"{s.chip}/{s.label}" for s in sensors.temperature_sensors()],
             "limits": self.app.config.get("display.limits", {}) or {},
@@ -173,7 +174,8 @@ class SettingsWindow(Gtk.Window):
         if section.help:
             box.pack_start(_wrap(label(section.help, "cw-dim cw-small")), False, False, 0)
         fields = list(section.fields)
-        described = {f.key for f in fields}
+        # keys an editor already covers (the Features page edits top, drawer, tools, hidden) get no row
+        described = {f.key for f in fields} | {k for f in fields for k in f.keys}
         for key, value in (self.app.config.section(sid) or {}).items():
             if key not in described:
                 fields.append(infer_field(key, value))

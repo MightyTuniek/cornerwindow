@@ -369,6 +369,7 @@ class Island(Gtk.Window):
         self.win_w = self.panel_w + OVERSHOOT_MARGIN
         self.win_h = geometry.height
         self.max_panel_h = geometry.height - OVERSHOOT_MARGIN
+        self.grid.limit_height(self.max_panel_h - 2 * self.pad)  # taller columns scroll
         self.backend.place(self, self.corner, geometry, self.win_w, self.win_h)
         _log.debug("Placed %dx%d at %s of %dx%d", self.win_w, self.win_h, self.corner,
                    geometry.width, geometry.height)

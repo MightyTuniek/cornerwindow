@@ -12,7 +12,7 @@ from typing import Any, Callable
 import cairo
 from gi.repository import Gdk, GLib, Gtk
 
-from ...modules.layout import Layout, allowed, preset
+from ...modules.layout import Layout, allowed, overflowing, preset
 from .. import theme
 from ..widgets import chip, label
 from ..widgets.card import IconButton, resolve_icon
@@ -174,11 +174,19 @@ def layout_editor(field, value, on_change, ctx):
         if state["layout"].move(mid, dest, index, info(mid)["area"]):
             commit()
 
+    def fit() -> list[tuple[int, int | None]]:
+        source = ctx.get("column_fit")
+        try:
+            return list(source()) if callable(source) else []
+        except Exception:
+            return []
+
     def switched(mid: str, on: bool) -> None:
         layout: Layout = state["layout"]
         if layout.visible(mid) == on:
             return
-        layout.set_visible(mid, on, info(mid)["area"])
+        heights = [wanted for wanted, _room in fit()]
+        layout.set_visible(mid, on, info(mid)["area"], heights)
         GLib.idle_add(lambda: commit() and False)  # not while the switch is mid-signal
 
     def menu_for(mid: str, dest, event, anchor) -> None:
@@ -235,12 +243,18 @@ def layout_editor(field, value, on_change, ctx):
             presets.pack_start(chip(title, lambda n=name: later(apply_preset, n), tip), False, False, 0)
         outer.pack_start(presets, False, False, 0)
         section("top", "Top row", layout.top, "Drop a card here")
+        too_tall = set(overflowing(fit()))
         for n, column in enumerate(layout.columns):
             extra = []
             if len(layout.columns) > 1:
                 extra.append(IconButton("clear", lambda i=n: later(layout.remove_column, i, commit),
                                         "Remove column (its cards move left)", "cw-icon cw-plain", 12))
             section(("col", n), f"Column {n + 1}", column, "Drop a card here", *extra)
+            if n in too_tall:
+                warn = label(f"Column {n + 1} is taller than your screen, so it scrolls. Move a card to a "
+                             "shorter column, switch one off, or add a column.", "cw-small cw-warn")
+                warn.set_line_wrap(True)
+                outer.pack_start(warn, False, False, 0)
         tools = Gtk.Box(spacing=6)
         tools.pack_start(chip("+ Column", lambda: later(layout.add_column, render)), False, False, 0)
         outer.pack_start(tools, False, False, 0)

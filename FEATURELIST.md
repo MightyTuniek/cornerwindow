@@ -1,6 +1,6 @@
 # Feature list
 
-The cards inside the open panel. The id is what goes in `[modules]` in the config (default layout in `config/default.toml`). Switch cards on and off, and move them, under Settings → Features; a switched-off card is listed in `[modules] hidden` and keeps its place. "Contextual" cards hide themselves while they have nothing to show. The Features page's **Essentials** and **Everything** buttons set the whole layout (`PRESETS` in `modules/layout.py`).
+The cards inside the open panel. The id is what goes in `[modules]` in the config (default layout in `config/default.toml`). Switch cards on and off, and move them, under Settings → Features; a switched-off card is listed in `[modules] hidden` and keeps its place. "Contextual" cards hide themselves while they have nothing to show. A column taller than the screen scrolls (the Features page warns, and switched-on cards go to the column with the most room). The Features page's **Essentials** and **Everything** buttons set the whole layout (`PRESETS` in `modules/layout.py`).
 
 | Card | Id | Contents |
 |---|---|---|

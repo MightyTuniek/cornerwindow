@@ -121,7 +121,9 @@ class Layout:
         target.insert(max(0, index), mid)
         return True
 
-    def set_visible(self, mid: str, on: bool, area: str = "main") -> None:
+    def set_visible(self, mid: str, on: bool, area: str = "main", heights: list[int] | None = None) -> None:
+        """Switch a card on or off. A card that wasn't placed goes to the shortest column:
+        by `heights` (what each column's cards measure on screen) when known, else by count."""
         if on:
             self.hidden = [m for m in self.hidden if m != mid]
             if self.where(mid) == "pool":
@@ -130,13 +132,15 @@ class Layout:
                 elif area == "tool":
                     self.tools.append(mid)
                 else:
-                    self.shortest_column().append(mid)
+                    self.shortest_column(heights).append(mid)
         elif self.where(mid) != "pool" and mid not in self.hidden:
             self.hidden.append(mid)
 
-    def shortest_column(self) -> list[str]:
+    def shortest_column(self, heights: list[int] | None = None) -> list[str]:
         if not self.columns:
             self.columns.append([])
+        if heights and len(heights) == len(self.columns):
+            return self.columns[min(range(len(heights)), key=lambda i: heights[i])]
         return min(self.columns, key=len)
 
     def add_column(self) -> None:
@@ -148,6 +152,12 @@ class Layout:
             return
         cards = self.columns.pop(index)
         self.columns[max(0, index - 1)].extend(cards)
+
+
+def overflowing(fit: list[tuple[int, int | None]]) -> list[int]:
+    """Indexes of the columns whose cards are taller than the room they have (they scroll).
+    `fit` is CardGrid.column_fit(): [(wanted height, room)]."""
+    return [i for i, (wanted, room) in enumerate(fit) if room is not None and wanted > room]
 
 
 def allowed(area: str, dest: Dest) -> bool:
