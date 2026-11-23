@@ -65,7 +65,8 @@ SECTIONS: list[Section] = [
     ]),
     Section("modules", "Features", "settings", [
         F("columns", "Cards", "layout", "Switch a card off to hide it; it keeps its place. Drag the handle to "
-          "move a card, or right-click it.", keys=("top", "columns", "drawer", "hidden")),
+          "move a card, or right-click it. Tools have no card: they add commands to the bar.",
+          keys=("top", "columns", "drawer", "tools", "hidden")),
         F("search_paths", "Extra module folders", "list", "Folders with your own module .py files.", restart=True),
     ], "Choose what the panel shows, and where."),
     Section("trigger", "Trigger", "pin", [
@@ -86,6 +87,8 @@ SECTIONS: list[Section] = [
           "into the panel, positive flares it outward, 0 is square.", min=-40, max=40, unit="px"),
         F("smoothing", "Corner smoothing", "float", "0 = circular, 0.6 = iOS-style continuous.", max=1, step=0.05, digits=2),
         F("shadow", "Shadow", "bool"),
+        F("density", "Density", "choice", "Compact: tighter cards and smaller big numbers.",
+          choices=["comfortable", "compact"]),
         F("glass", "Liquid Glass", "bool", "See-through glass that bends what is behind it. Tune it under Glass."),
     ]),
     Section("glass", "Glass", "glass", [
@@ -128,6 +131,8 @@ SECTIONS: list[Section] = [
     ], "Start typing anywhere in the open panel, or press ? in the bar to see everything it can do."),
     Section("display", "Display", "brightness", [
         F("limits", "Maximum", "limits", "Nothing can go above this: sliders, presets, scrolling, commands."),
+        F("night_chip", "Night light chip", "choice", "Auto: only when the Night quick toggle isn't shown.",
+          choices=["auto", "true", "false"]),
         F("presets", "Presets", "presets", "Click a preset in the island to apply it; hold it there to save current values."),
         F("step", "Scroll step", "int", min=1, max=25, unit="%"),
         F("refresh_on_open", "Re-read values on open", "bool", "Picks up changes made with the monitor's buttons."),
@@ -155,23 +160,60 @@ SECTIONS: list[Section] = [
     Section("toggles", "Toggles", "wifi", [
         F("items", "Toggles", "switchlist", "Drag to reorder; switched-off toggles aren't shown."),
         F("per_row", "Per row", "int", min=2, max=6),
+        F("rows", "Rows", "int", "More toggles than fit go behind a “More” tile. 0 = no limit.", min=0, max=6),
+        F("awake_minutes", "Awake for", "list", "Minutes offered by the Awake toggle's picker.", item_type=int),
     ]),
     Section("glance", "System", "monitor", [
         F("interval", "Update every", "float", min=0.25, max=10, step=0.25, digits=2, unit="s"),
+        F("compact", "Start compact", "bool", "One row; click the card for sparklines, disk and processes."),
+        F("processes", "Busiest processes", "int", "Listed in the full view, each with a stop button.",
+          min=0, max=10),
         F("cpu_sensor", "CPU temperature", "sensor"),
         F("gpu_sensor", "GPU temperature", "sensor"),
         F("disk_path", "Disk", "text", "Which mount point to report free space for."),
     ]),
     Section("battery", "Battery", "battery", [
         F("low", "Warn below", "int", "A red dot on the corner while discharging.", min=1, max=50, unit="%"),
-        F("peripherals", "Show wireless devices", "bool", "Mice, keyboards, headsets, controllers, phones."),
+        F("peripherals", "Wireless devices", "choice", "Mice, keyboards, headsets, controllers, phones. "
+          "Low: only when they need charging (the Bluetooth picker shows them all).",
+          choices=["low", "always", "never"]),
+        F("peripheral_low", "Low means", "int", "At or below this.", min=1, max=100, unit="%"),
     ], "Appears only when there is a battery to show."),
     Section("header", "Clock", "timer", [
         F("clock_format", "Time format", "text", "strftime codes, e.g. %H:%M or %I:%M %p."),
         F("date_format", "Date format", "text", "e.g. %A, %-d %B."),
         F("week_start", "Week starts on", "choice", "In the calendar (click the date to open it).",
           choices=["monday", "sunday", "saturday"]),
+        F("next_event", "Next event under the date", "bool", "From your calendars (see Calendar)."),
+        F("agenda", "Events under the calendar", "int", min=0, max=10),
+        F("power", "Power button", "bool", "Lock, sleep, restart and shut down, when the Power card is off."),
     ]),
+    Section("calendar", "Calendar", "calendar", [
+        F("enabled", "Show events", "bool"),
+        F("evolution", "GNOME Calendar and online accounts", "bool", "Read Evolution's local calendars and "
+          "the copies it keeps of Google, Nextcloud and Exchange calendars."),
+        F("sources", "Other calendars", "list", ".ics files or links, e.g. a Google calendar's secret address."),
+        F("days", "Look ahead", "int", min=1, max=60, unit="days"),
+        F("refresh_minutes", "Refresh every", "int", min=1, max=240, unit="min"),
+    ], "Your next event under the clock, dots on busy days in the month calendar."),
+    Section("notifications", "Notifications", "notification", [
+        F("size", "Remember", "int", min=5, max=200, unit="items"),
+        F("show", "Show", "int", "Listed before “N more”.", min=1, max=20),
+        F("ignore", "Leave out", "list", "Part of an app's name."),
+        F("trigger_dot", "Dot on the corner while unread", "bool"),
+    ], "Notifications the desktop showed, kept for when you missed them. The card hides while empty."),
+    Section("downloads", "Downloads", "download", [
+        F("folder", "Folder", "text", "Empty = your downloads folder.", restart=True),
+        F("keep_minutes", "Keep finished ones for", "int", min=1, max=1440, unit="min"),
+        F("show", "Finished downloads shown", "int", min=1, max=10),
+    ], "The card hides while nothing is downloading or just finished."),
+    Section("updates", "Updates", "update", [
+        F("check_hours", "Check every", "float", "When the panel opens, at most this often.", min=0.5, max=72,
+          step=0.5, digits=1, unit="h"),
+        F("flatpak", "Count Flatpak updates", "bool"),
+        F("snap", "Count Snap updates", "bool"),
+        F("trigger_dot", "Dot on the corner while updates wait", "bool"),
+    ], "The card hides while everything is up to date."),
     Section("timer", "Timer", "timer", [
         F("presets", "Quick timers", "list", "Minutes.", item_type=int),
     ]),
@@ -180,8 +222,33 @@ SECTIONS: list[Section] = [
     ]),
     Section("clipboard", "Clipboard", "copy", [
         F("size", "Remember", "int", min=1, max=100, unit="items"),
-        F("persist", "Keep after restart", "bool", "Stored in ~/.local/share/cornerwindow."),
+        F("persist", "Keep after restart", "bool", "Stored in ~/.local/share/cornerwindow. Pins are always kept."),
+        F("images", "Images", "int", "Copied images remembered (in memory only). 0 = text only.", min=0, max=20),
+        F("clear_after", "Clear the clipboard after", "int", "For passwords: the system clipboard is emptied "
+          "this long after you copy; the history keeps the entry. 0 = never.", min=0, max=3600, step=5, unit="s"),
     ]),
+    Section("capture", "Capture", "screenshot", [
+        F("copy", "Copy screenshots", "bool", "Also put them on the clipboard."),
+        F("notify", "Notify when saved", "bool"),
+        F("color_format", "Colours copy as", "choice", choices=["hex", "rgb", "hsl"]),
+        F("ocr_language", "Text language", "text", "Tesseract's language codes, e.g. eng+deu. Empty = its default."),
+        F("open_qr_links", "Open QR links", "bool", "They're always copied."),
+        F("delay_ms", "Wait before capturing", "int", "Time for the panel to close.", min=0, max=3000, step=50,
+          unit="ms"),
+    ], "“shot”, “pick”, “ocr” and “qr” in the command bar. Text needs tesseract, QR codes zbar-tools."),
+    Section("windowtools", "Snapping", "window", [
+        F("gap", "Gap", "int", "Between snapped windows and around them.", max=60, unit="px"),
+    ], "“snap left”, “snap tr”, “snap max”, “snap next” in the bar, or bind `cornerwindow action "
+       "window.snap.left` to a keyboard shortcut. X11 only."),
+    Section("snippets", "Snippets", "snippet", [
+        F("items", "Snippets", "dict", "Name → text. Type ;name in the bar. {date} {time} {datetime} {weekday} "
+          "{clipboard} are filled in; \\n is a new line."),
+        F("paste", "Paste into the window", "bool", "Needs xdotool (X11) or wtype (Wayland); otherwise it's copied."),
+        F("paste_delay_ms", "Paste delay", "int", min=0, max=2000, step=50, unit="ms"),
+    ]),
+    Section("shelf", "Shelf", "shelf", [
+        F("size", "Keep", "int", min=1, max=100, unit="items"),
+    ], "Drag files, text or links onto the corner, drop them on the Shelf tab, drag them out later."),
     Section("power", "Power", "poweroff", [
         F("items", "Buttons", "switchlist", "Drag to reorder; switched-off buttons aren't shown."),
         F("hold_ms", "Hold to confirm", "int", min=100, max=3000, step=50, unit="ms"),
@@ -193,6 +260,22 @@ SECTIONS: list[Section] = [
         F("favorites", "Show favourites", "bool", "The apps pinned to the desktop's dash or taskbar."),
         F("attention_dot", "Dot when a window needs attention", "bool", "Orange, on the corner."),
     ], "Click an app to switch to it, middle-click for a new window, right-click for its windows."),
+    Section("alerts", "Alerts", "alert", [
+        F("interval", "Check every", "int", min=5, max=600, unit="s"),
+        F("cpu", "CPU busy above", "int", "0 = off.", max=100, unit="%"),
+        F("temperature", "Temperature above", "int", "0 = off.", max=120, unit="°C"),
+        F("memory", "Memory above", "int", "0 = off.", max=100, unit="%"),
+        F("disk_gb", "Free disk below", "int", "0 = off.", max=1000, unit="GB"),
+        F("sustain", "For at least", "int", "CPU, memory and temperature must stay high this long.",
+          min=0, max=3600, step=10, unit="s"),
+        F("cooldown", "Repeat after", "int", min=60, max=86400, step=60, unit="s"),
+    ], "A tool that checks in the background (switch it on under Features)."),
+    Section("agents", "AI agents", "agent", [
+        F("interval", "Refresh every", "int", "While the panel is open.", min=2, max=120, unit="s"),
+        F("window_budget", "Tokens per 5-hour window", "int", "For the meter. 0 = show the time left instead.",
+          max=100_000_000, step=100_000),
+        F("trigger_dot", "Dot on the corner while an agent works", "bool"),
+    ], "Claude Code and Codex, read from their logs on this PC."),
     Section("weather", "Weather", "weather", [
         F("place", "City", "place_search", "Looked up on Open-Meteo when you press Find.",
           keys=("place", "latitude", "longitude")),

@@ -21,6 +21,7 @@ class Stream:
     icon: str  # icon name or app id ("" = unknown)
     volume: float  # 0..1, same scale as Level
     muted: bool
+    sink: str = ""  # the output it plays on ("" = unknown)
 
 
 @dataclass
@@ -32,6 +33,7 @@ class AppVolume:
     ids: list[str]
     volume: float
     muted: bool
+    sink: str = ""  # the output its first stream plays on
 
 
 @dataclass
@@ -73,6 +75,9 @@ class AudioBackend(ABC):
     def set_stream_muted(self, stream_id: str, muted: bool) -> None:
         pass
 
+    def move_stream(self, stream_id: str, sink_id: str) -> None:
+        """Play this stream on another output (sink_id as devices("sink") reports it)."""
+
 
 def parse_pw_dump(text: str) -> list[Stream]:
     """Playback streams from `pw-dump`. PipeWire stores linear amplitude; wpctl and the
@@ -81,8 +86,10 @@ def parse_pw_dump(text: str) -> list[Stream]:
         objects = json.loads(text or "[]")
     except ValueError:
         return []
+    objects = objects if isinstance(objects, list) else []
+    links = pw_links(objects)
     streams = []
-    for obj in objects if isinstance(objects, list) else []:
+    for obj in objects:
         info = obj.get("info") or {}
         props = info.get("props") or {}
         if props.get("media.class") != "Stream/Output/Audio":
@@ -98,8 +105,38 @@ def parse_pw_dump(text: str) -> list[Stream]:
                      or props.get("application.process.binary") or ""),
             volume=round(max(0.0, linear) ** (1 / 3), 3),
             muted=bool(values.get("mute", False)),
+            sink=links.get(str(obj.get("id")), ""),
         ))
     return streams
+
+
+def pw_links(objects: list) -> dict[str, str]:
+    """stream node id -> the sink node id it is linked to, from `pw-dump` link objects."""
+    sinks = {str(o.get("id")) for o in objects
+             if ((o.get("info") or {}).get("props") or {}).get("media.class") == "Audio/Sink"}
+    out: dict[str, str] = {}
+    for obj in objects:
+        if obj.get("type") != "PipeWire:Interface:Link":
+            continue
+        info = obj.get("info") or {}
+        src, dst = str(info.get("output-node-id")), str(info.get("input-node-id"))
+        if dst in sinks:
+            out.setdefault(src, dst)
+    return out
+
+
+def pw_serials(text: str) -> dict[str, str]:
+    """node id -> object.serial for every audio sink in `pw-dump` (target.object wants the serial)."""
+    try:
+        objects = json.loads(text or "[]")
+    except ValueError:
+        return {}
+    out = {}
+    for obj in objects if isinstance(objects, list) else []:
+        props = (obj.get("info") or {}).get("props") or {}
+        if props.get("media.class") == "Audio/Sink":
+            out[str(obj.get("id"))] = str(props.get("object.serial", obj.get("id")))
+    return out
 
 
 def parse_pactl_streams(text: str) -> list[Stream]:
@@ -123,6 +160,7 @@ def parse_pactl_streams(text: str) -> list[Stream]:
             icon=str(props.get("application.icon_name") or props.get("application.process.binary") or ""),
             volume=(max(percents) / 100.0) if percents else 1.0,
             muted=bool(item.get("mute", False)),
+            sink=str(item.get("sink", "")),
         ))
     return streams
 
@@ -135,7 +173,8 @@ def group_streams(streams: list[Stream], ignore: list[str] = ()) -> list[AppVolu
             continue
         group = groups.get(stream.app)
         if group is None:
-            groups[stream.app] = AppVolume(stream.app, stream.icon, [stream.id], stream.volume, stream.muted)
+            groups[stream.app] = AppVolume(stream.app, stream.icon, [stream.id], stream.volume, stream.muted,
+                                           stream.sink)
         else:
             group.ids.append(stream.id)
             group.volume = max(group.volume, stream.volume)

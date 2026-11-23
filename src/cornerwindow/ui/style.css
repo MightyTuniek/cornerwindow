@@ -50,6 +50,9 @@ window.cw-window {
   font-feature-settings: "tnum";
 }
 .cw-date { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.72); }
+.cw-agent-working { color: #bf5af2; font-weight: 600; }
+.cw-event { font-size: 12px; color: rgba(255, 255, 255, 0.55); margin-top: 1px; }
+.cw-light .cw-event { color: rgba(0, 0, 0, 0.5); }
 
 /* ── buttons ───────────────────────────────────────── */
 .cw-root button {
@@ -80,6 +83,9 @@ window.cw-window {
 .cw-tnum { font-feature-settings: "tnum"; }
 .cw-picker { margin-top: 10px; }
 .cw-forecast { margin-top: 6px; }
+.cw-root button.cw-bare, .cw-root button.cw-bare:hover, .cw-root button.cw-bare:active {
+  background-color: transparent; border: none; box-shadow: none; padding: 0; border-radius: 0; min-height: 0;
+}
 .cw-root button.cw-disclosure { background-color: transparent; border: none; box-shadow: none; padding: 1px 6px; border-radius: 8px; }
 .cw-root button.cw-disclosure:hover { background-color: rgba(255, 255, 255, 0.08); }
 .cw-light button.cw-disclosure:hover { background-color: rgba(0, 0, 0, 0.05); }
@@ -102,6 +108,8 @@ window.cw-window {
 .cw-segments { background-color: rgba(255, 255, 255, 0.08); border-radius: 999px; padding: 3px; }
 .cw-root .cw-segments button { padding: 4px 12px; }
 .cw-root .cw-segments button label { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.7); }
+.cw-root .cw-segments.cw-crowded button { padding: 4px 6px; }
+.cw-root .cw-segments.cw-crowded button label { font-size: 11.5px; }
 .cw-root .cw-segments button:hover { background-color: rgba(255, 255, 255, 0.08); }
 .cw-root .cw-segments button.active { background-color: rgba(255, 255, 255, 0.2); }
 .cw-root .cw-segments button.active label { color: #fff; }
@@ -130,12 +138,37 @@ window.cw-window {
 .cw-root scrolledwindow, .cw-root viewport { background-color: transparent; border: none; }
 .cw-root scrollbar { background-color: transparent; border: none; }
 .cw-root scrollbar slider { background-color: rgba(255, 255, 255, 0.25); min-width: 4px; border-radius: 4px; }
+/* A column that scrolls fades out at the end that has more: you can see there is more. GTK shows
+   "undershoot" only while that side can still scroll. */
+.cw-root scrolledwindow.cw-column undershoot.bottom, .cw-root scrolledwindow.cw-column undershoot.top {
+  background-repeat: no-repeat; background-size: 100% 36px; background-color: transparent;
+}
+.cw-root scrolledwindow.cw-column undershoot.bottom {
+  background-position: bottom; background-image: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
+}
+.cw-root scrolledwindow.cw-column undershoot.top {
+  background-position: top; background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
+}
+.cw-glass scrolledwindow.cw-column undershoot.bottom {
+  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0));
+}
+.cw-glass scrolledwindow.cw-column undershoot.top {
+  background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0));
+}
+.cw-light scrolledwindow.cw-column undershoot.bottom {
+  background-image: linear-gradient(to top, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+}
+.cw-light scrolledwindow.cw-column undershoot.top {
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+}
 
 /* ── lists (clipboard, command results) ────────────── */
 .cw-root button.cw-row {
   border-radius: 10px;
   padding: 6px 9px;
 }
+.cw-root button.cw-thumb { padding: 2px; border-radius: 8px; background-color: rgba(255, 255, 255, 0.06); }
+.cw-root button.cw-thumb:hover { background-color: rgba(255, 255, 255, 0.16); }
 .cw-root button.cw-row:hover { background-color: rgba(255, 255, 255, 0.09); }
 .cw-root button.cw-row.active { background-color: rgba(10, 132, 255, 0.32); }
 .cw-root button.cw-row.cw-confirm, .cw-root button.cw-row.cw-confirm.active { background-color: rgba(255, 69, 58, 0.45); }
@@ -165,6 +198,7 @@ window.cw-window {
 
 /* ── metrics ───────────────────────────────────────── */
 .cw-metric-value { font-size: 17px; font-weight: 600; font-feature-settings: "tnum"; }
+.cw-metric-small { font-size: 14px; font-weight: 600; font-feature-settings: "tnum"; }
 .cw-metric-sub { font-size: 11px; color: rgba(255, 255, 255, 0.5); font-feature-settings: "tnum"; }
 
 /* ── timer ─────────────────────────────────────────── */
@@ -252,6 +286,7 @@ window.cw-window {
   padding: 6px;
 }
 .cw-glass button.cw-icon.cw-big { padding: 8px; }
+.cw-glass button.cw-icon.cw-mini { padding: 2px; }
 .cw-glass button.cw-icon.cw-plain { border-color: transparent; }
 .cw-glass button.cw-chip {
   border: 1px solid transparent;
@@ -378,3 +413,15 @@ menu.cw-menu.cw-light menuitem label,
 menu.cw-menu.cw-light menuitem cellview { color: #1d1d1f; }
 menu.cw-menu.cw-light menuitem:hover { background-color: rgba(0, 0, 0, 0.06); }
 menu.cw-menu.cw-light arrow { color: rgba(0, 0, 0, 0.45); }
+
+/* ── density = "compact" (Look) ──────────────────────
+   Same structure, tighter: cards lose 3px of padding, the big numbers shrink. Glass keeps its
+   1px-less padding rule. */
+.cw-compact .cw-card { padding: 9px 10px; border-radius: 17px; }
+.cw-compact.cw-glass .cw-card, .cw-glass.cw-compact .cw-card { padding: 8px 9px; }
+.cw-compact .cw-card.cw-flat { padding: 1px 3px; }
+.cw-compact .cw-clock { font-size: 32px; }
+.cw-compact .cw-timer { font-size: 28px; }
+.cw-compact .cw-metric-value { font-size: 15px; }
+.cw-compact button.cw-chip { padding-top: 3px; padding-bottom: 3px; }
+.cw-compact.cw-glass button.cw-chip, .cw-glass.cw-compact button.cw-chip { padding-top: 2px; padding-bottom: 2px; }

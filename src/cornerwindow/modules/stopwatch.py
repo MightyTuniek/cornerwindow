@@ -74,6 +74,9 @@ class Stopwatch(Module):
         self.ctx.actions.register("stopwatch.lap", self.lap, "Stopwatch lap")
 
     # -- logic ----------------------------------------------------------------------------
+    def busy(self) -> bool:
+        return self.watch.running
+
     def toggle(self) -> str:
         running = self.watch.toggle()
         self._dot()

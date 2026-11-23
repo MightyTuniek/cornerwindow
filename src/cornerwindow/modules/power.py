@@ -18,15 +18,20 @@ ACTIONS = {
 }
 
 
+def run_action(ctx, key: str) -> None:
+    """Close the panel, then lock / sleep / restart… off the main thread."""
+    _icon, _title, fn, _color = ACTIONS[key]
+    ctx.island.close()
+    tasks.run_async(fn)
+
+
 @module("power", title="Power", icon="poweroff", description="Lock, sleep, restart and shut down")
 class Power(Module):
     def configure(self) -> None:
         self.items = [i for i in self.config.get("items", ["lock", "suspend", "reboot", "poweroff"]) if i in ACTIONS]
 
     def _run(self, key: str) -> None:
-        _icon, _title, fn, _color = ACTIONS[key]
-        self.ctx.island.close()
-        tasks.run_async(fn)
+        run_action(self.ctx, key)
 
     def build(self):
         card = Card()
@@ -40,19 +45,26 @@ class Power(Module):
         return card
 
     def commands(self) -> list[Command]:
-        # Lock and sleep run at once; the ones that close your apps need Enter twice in the bar,
-        # the typed equivalent of the hold gesture.
-        def runner(key: str):
-            def run(_arg: str) -> str:
-                self._run(key)
-                return ACTIONS[key][1]
-            return run
+        return power_commands(self.ctx)
 
-        return [
-            Command(("lock",), "Lock screen", "lock", runner("lock"), icon="lock"),
-            Command(("sleep", "suspend"), "Sleep", "sleep", runner("suspend"), icon="suspend"),
-            Command(("logout", "signout"), "Log out", "logout", runner("logout"), confirm=True, icon="logout"),
-            Command(("restart", "reboot"), "Restart", "restart", runner("reboot"), confirm=True, icon="reboot"),
-            Command(("shutdown", "poweroff"), "Shut down", "shutdown", runner("poweroff"), confirm=True,
-                    icon="poweroff"),
-        ]
+
+def power_commands(ctx) -> list[Command]:
+    """Lock and sleep run at once; the ones that close your apps need Enter twice in the bar,
+    the typed equivalent of the hold gesture. Shared by this card and the clock's power button."""
+
+    def runner(key: str):
+        def run(_arg: str) -> str:
+            run_action(ctx, key)
+            return ACTIONS[key][1]
+        return run
+
+    return [
+        Command(("lock",), "Lock screen", "lock", runner("lock"), icon="lock", group="Power"),
+        Command(("sleep", "suspend"), "Sleep", "sleep", runner("suspend"), icon="suspend", group="Power"),
+        Command(("logout", "signout"), "Log out", "logout", runner("logout"), confirm=True, icon="logout",
+                group="Power"),
+        Command(("restart", "reboot"), "Restart", "restart", runner("reboot"), confirm=True, icon="reboot",
+                group="Power"),
+        Command(("shutdown", "poweroff"), "Shut down", "shutdown", runner("poweroff"), confirm=True,
+                icon="poweroff", group="Power"),
+    ]

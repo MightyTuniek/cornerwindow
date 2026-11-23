@@ -69,3 +69,27 @@ def search(query: str, limit: int = 8, home: str | None = None) -> list[str]:
     if not paths:  # no locate, or its database is out of date: walk instead
         paths = _walk(query, home)
     return rank_files(query, paths, limit)
+
+
+def reveal(path) -> None:
+    """Show a file selected in the file manager (org.freedesktop.FileManager1), else open its folder."""
+    from pathlib import Path
+
+    from gi.repository import GLib
+
+    from ..core import tasks
+    from . import dbus
+    from .desktop import open_uri
+
+    path = Path(path)
+
+    def work() -> bool:
+        try:
+            dbus.call(dbus.session(), "org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                      "org.freedesktop.FileManager1", "ShowItems",
+                      GLib.Variant("(ass)", ([path.as_uri()], "")), None)
+            return True
+        except Exception:
+            return False
+
+    tasks.run_async(work, lambda ok: None if ok else open_uri(path.parent.as_uri()))

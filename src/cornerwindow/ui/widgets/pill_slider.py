@@ -163,6 +163,7 @@ class PillSlider(Gtk.DrawingArea):
         y = (height - h) / 2
 
         p = theme.current()
+        cr.save()  # the pill clip below is undone before the rim, keeping any clip from outside
         pill(cr, x, y, w, h)
         cr.clip_preserve()
         cr.set_source_rgba(*mix(p.track, p.track_hover, self.hover.value))
@@ -195,8 +196,8 @@ class PillSlider(Gtk.DrawingArea):
             cr.paint()
             ink(p.ink_on_fill)
             cr.restore()
+        cr.restore()  # not reset_clip(): that would also drop the scrolling column's clip
         if p.platter_rim:
-            cr.reset_clip()
             pill(cr, x + 0.5, y + 0.5, w - 1, h - 1)
             platter_rim(cr, p.platter_rim * 0.8, y, h)
             cr.new_path()

@@ -34,6 +34,7 @@ ears = 10                     # where the panel meets the screen edges: >0 flare
 smoothing = 0.6               # 0 = circular corners, 0.6 = iOS-like continuous corners
 shadow = true
 glass = false                 # Liquid Glass theme instead of the black island (see [glass])
+density = "comfortable"       # comfortable | compact (tighter cards, smaller big numbers)
 
 [glass]
 # Liquid Glass bends the live backdrop like a lens at its rim instead of just blurring it.
@@ -62,12 +63,16 @@ slow_motion = 1.0             # >1 slows every animation down (great for tuning)
 
 [modules]
 top = ["commandbar", "windows"]   # windows = the Apps strip, shown while the taskbar is hidden (see [windows])
-# Columns left -> right, cards top -> bottom. Any module id works anywhere.
+# Columns left -> right, cards top -> bottom. Any module id works anywhere. Several cards show
+# only while they have something to show: drives, notifications, downloads, battery, updates.
+# Also available: power (a card; the clock has a power button instead), weather, agents.
 columns = [
-  ["display", "audio", "media", "drives", "glance"],
-  ["header", "toggles", "battery", "drawer", "power"],
+  ["display", "audio", "media", "drives", "glance", "downloads", "updates"],
+  ["header", "toggles", "notifications", "battery", "drawer"],
 ]
-drawer = ["timer", "stopwatch", "clipboard", "notes"]
+drawer = ["timer", "stopwatch", "clipboard", "notes", "shelf"]
+# Tools have no card: they add commands to the bar (and actions). Also available: alerts.
+tools = ["capture", "windowtools", "snippets", "processes"]
 hidden = []                   # switched off: they keep their place above but aren't shown
 search_paths = []             # extra folders with your own module .py files
 
@@ -89,6 +94,7 @@ maps = "https://www.openstreetmap.org/search?query={}"
 
 [display]
 backend = "auto"              # auto | ddc | ddcutil | backlight | gamma   (or a list, in order)
+night_chip = "auto"           # a Night light chip with the presets: auto (only without the Night quick toggle) | true | false
 # i2c_bus = 4                 # skip detection and talk to /dev/i2c-N directly
 step = 5                      # % per scroll notch
 refresh_on_open = true        # re-read values (in case you used the monitor's buttons)
@@ -139,12 +145,17 @@ trigger_dot = true            # small green dot on the corner while something pl
 
 [toggles]
 # Toggles hide themselves when their service is missing (power_profile needs power-profiles-daemon,
-# vpn a NetworkManager VPN or WireGuard connection). Also available: mic.
-items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine", "power_profile", "vpn", "airplane", "glass"]
+# vpn a NetworkManager VPN or WireGuard connection). Also available: mic, glass (the Liquid
+# Glass theme; also under Settings → Look).
+items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine", "power_profile", "vpn", "airplane"]
 per_row = 4
+rows = 2                      # more toggles than fit in this many rows go behind a "More" tile (0 = no limit)
+awake_minutes = [30, 60, 120] # the Awake toggle's picker ("awake 1h" works too)
 
 [glance]
 interval = 1.0
+compact = true                # one row (CPU, GPU, memory, network); click it for sparklines, disk and processes
+processes = 4                 # busiest processes listed in the full view (0 = none)
 cpu_sensor = "auto"           # or "chip/label", e.g. "k10temp/Tctl" (see `cornerwindow doctor`)
 gpu_sensor = "auto"
 disk_path = "/"
@@ -152,24 +163,97 @@ disk_path = "/"
 [battery]
 # Shown only when UPower reports a battery: a laptop's, or a wireless mouse, headset, controller...
 low = 15                      # red dot on the corner below this % while discharging
-peripherals = true            # also list mice, keyboards, headsets, controllers, phones
+peripherals = "low"           # mice, keyboards, headsets, controllers, phones: always | low | never
+peripheral_low = 20           # "low": list a wireless device only at or below this % (the Bluetooth picker shows them all)
 
 [header]
 clock_format = "%H:%M"
 date_format = "%A, %-d %B"
 week_start = "monday"         # first day of the week in the calendar (click the date to open it)
+next_event = true             # "Standup · in 25 min" under the date (see [calendar])
+agenda = 4                    # upcoming events listed under the month calendar
+power = true                  # a power button (lock, sleep, restart, shut down) when the Power card is off
+
+[calendar]
+# Events come from GNOME Calendar / Evolution (local calendars and online accounts such as Google,
+# Nextcloud, Exchange), read from their files, plus any .ics files or URLs listed here.
+enabled = true
+evolution = true
+sources = []                  # e.g. ["~/calendar.ics", "https://calendar.google.com/…/basic.ics"]
+days = 7                      # how far ahead to look
+refresh_minutes = 10
+
+[notifications]
+# A history of the notifications the desktop showed (it keeps showing its own banners).
+size = 30                     # remembered
+show = 3                      # listed before "N more"
+ignore = []                   # apps to leave out (part of their name)
+trigger_dot = true            # blue dot on the corner while something is unread
+
+[downloads]
+folder = ""                   # "" = your downloads folder
+keep_minutes = 30             # how long a finished download stays listed
+show = 3                      # finished downloads listed
+
+[updates]
+check_hours = 6               # check when the panel opens, at most this often (apt needs no network)
+flatpak = true
+snap = true
+trigger_dot = false           # blue dot on the corner while updates are waiting
 
 [drawer]
-height = 150
+height = 100                  # px; a tab that needs more scrolls
 
 [timer]
-presets = [1, 5, 15, 25, 45]
+presets = [5, 15, 25]         # minutes; any other length: type "timer 10" or "t 90s"
 
 [clipboard]
 size = 10
 persist = false               # keep history across restarts (stored in ~/.local/share/cornerwindow)
+images = 4                    # copied images remembered (in memory only; 0 = text only)
+clear_after = 0               # seconds: clear the system clipboard this long after a copy (0 = never; history keeps it)
+
+[shelf]
+size = 20                     # items kept on the shelf
+
+[capture]
+# Screenshots go to Pictures/Screenshots. Text recognition needs tesseract, QR codes zbar-tools.
+copy = true                   # also copy the screenshot to the clipboard
+notify = true
+color_format = "hex"          # what "pick" copies: hex | rgb | hsl
+ocr_language = ""             # tesseract language, e.g. "eng+deu"; "" = its default
+open_qr_links = false         # open a QR code's link right away (it's always copied)
+delay_ms = 350                # wait for the panel to close before capturing
+
+[windowtools]
+gap = 0                       # px between snapped windows and around them
+
+[snippets]
+paste = true                  # paste into the window you were in (needs xdotool on X11, wtype on Wayland); else copy
+paste_delay_ms = 250
+
+[snippets.items]              # ;name in the bar. {date} {time} {datetime} {weekday} {clipboard} {date:%d.%m.%Y}
+today = "{date}"
+now = "{datetime}"
+
+[alerts]
+# A tool that checks in the background (switch it on under Settings → Features).
+interval = 15                 # seconds between checks
+cpu = 90                      # % busy for `sustain` seconds (0 = off)
+temperature = 90              # °C
+memory = 92                   # % used
+disk_gb = 5                   # free GB on [glance] disk_path
+sustain = 60
+cooldown = 1800               # seconds before the same alert repeats
+
+[agents]
+# Claude Code and Codex usage from their local logs. Switch the card on under Settings → Features.
+interval = 10                 # seconds, while the panel is open
+window_budget = 0             # tokens you get per 5-hour window, for the meter (0 = show the time left instead)
+trigger_dot = true            # purple dot on the corner while an agent is working
 
 [power]
+# The buttons, both on the Power card and behind the clock's power button.
 items = ["lock", "suspend", "reboot", "poweroff"]
 hold_ms = 600                 # hold this long to confirm
 lock_hold_ms = 250

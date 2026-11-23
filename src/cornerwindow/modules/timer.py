@@ -27,6 +27,10 @@ class Timer(Module):
         self.ctx.actions.register("timer.toggle", self.toggle_pause, "Pause / resume timer")
 
     # -- logic ----------------------------------------------------------------------------
+    def busy(self) -> bool:
+        """Running or paused: the drawer opens on this tab."""
+        return self.ends_at is not None or self.paused_left is not None
+
     def left(self) -> float:
         if self.paused_left is not None:
             return self.paused_left
@@ -139,10 +143,12 @@ class Timer(Module):
         presets.set_selection_mode(Gtk.SelectionMode.NONE)
         presets.set_column_spacing(6)
         presets.set_row_spacing(6)
-        for minutes in self.config.get("presets", [1, 5, 15, 25, 45]):
+        minutes_list = list(self.config.get("presets", [5, 15, 25]) or [])
+        # one line for up to four (a FlowBox otherwise asks for the height of one chip per row)
+        presets.set_min_children_per_line(max(1, min(4, len(minutes_list))))
+        for minutes in minutes_list:
             presets.add(chip(f"{minutes} min", lambda m=minutes: self.start(m * 60)))
         box.pack_start(presets, False, False, 0)
-        box.pack_start(label("Tip: type “timer 10” or “t 90s”", "cw-dim cw-small"), False, False, 0)
         self._update()
         return box
 

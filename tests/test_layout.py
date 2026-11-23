@@ -20,6 +20,7 @@ def test_round_trip_keeps_config():
         "top": ["commandbar"],
         "columns": [["display", "audio", "media"], ["header", "toggles"]],
         "drawer": ["timer", "notes"],
+        "tools": [],
         "hidden": [],
     }
 
@@ -83,3 +84,41 @@ def test_empty_columns_are_dropped_on_save():
     layout = base()
     layout.add_column()
     assert len(layout.to_config()["columns"]) == 2
+
+
+def test_tools_live_only_among_tools():
+    layout = base()
+    assert allowed("tool", "tools") and not allowed("tool", ("col", 0)) and not allowed("tool", "drawer")
+    assert not allowed("main", "tools") and not allowed("drawer", "tools")
+    layout.set_visible("capture", True, area="tool")
+    assert layout.where("capture") == "tools" and layout.visible("capture")
+    assert not layout.move("capture", ("col", 0), area="tool")
+    layout.set_visible("capture", False, area="tool")
+    assert layout.to_config()["hidden"] == ["capture"] and layout.to_config()["tools"] == ["capture"]
+
+
+def test_presets_place_every_card_once():
+    from cornerwindow.modules.layout import PRESETS, preset
+
+    for name in PRESETS:
+        placed = preset(name).placed()
+        assert len(placed) == len(set(placed)), name
+
+
+def test_new_card_goes_to_the_column_with_most_room():
+    layout = base()  # column 1 has 3 cards, column 2 has 2
+    layout.set_visible("weather", True)
+    assert layout.where("weather") == ("col", 1)  # by count without measurements
+    layout = base()
+    layout.set_visible("weather", True, heights=[600, 900])  # column 2 has fewer but taller cards
+    assert layout.where("weather") == ("col", 0)
+    layout = base()
+    layout.set_visible("weather", True, heights=[600])  # measurements don't match: by count
+    assert layout.where("weather") == ("col", 1)
+
+
+def test_overflowing_columns():
+    from cornerwindow.modules.layout import overflowing
+
+    assert overflowing([(900, 1000), (1200, 1000), (1300, None)]) == [1]
+    assert overflowing([]) == []

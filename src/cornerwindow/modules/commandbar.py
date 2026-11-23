@@ -463,7 +463,7 @@ class CommandBar(Module):
 
     @staticmethod
     def _from_suggestion(s: Suggestion, key: str) -> Result:
-        return Result(s.title, s.detail, s.run, s.icon, s.closes, s.complete, key=key)
+        return Result(s.title, s.detail, s.run, s.icon, s.closes, s.complete, key=key, confirm=s.confirm)
 
     # -- answers: maths, units, bases, currencies, times ----------------------------------
     def _answer(self, query: str) -> Result | None:

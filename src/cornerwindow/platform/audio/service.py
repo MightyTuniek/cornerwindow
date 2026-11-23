@@ -116,6 +116,19 @@ class AudioService:
         for stream_id in app.ids:
             self._writer.submit((("stream", stream_id), "mute"), muted)
 
+    def move_app(self, app: AppVolume, sink_id: str, then=None) -> None:
+        """Send every stream of one app to another output (music on the speakers, the call on
+        the headset)."""
+        if not self.backend:
+            return
+        app.sink = sink_id
+
+        def work() -> None:
+            for stream_id in app.ids:
+                self.backend.move_stream(stream_id, sink_id)
+
+        tasks.run_async(work, (lambda _r: then()) if then else None)
+
     def _apply(self, key, value) -> None:
         kind, what = key
         if isinstance(kind, tuple):  # ("stream", id)
