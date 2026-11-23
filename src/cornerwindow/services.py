@@ -142,4 +142,37 @@ class Services:
         from .platform.clipboard import ClipboardHistory
 
         section = self.config.section("clipboard")
-        return ClipboardHistory(int(section.get("size", 10)), bool(section.get("persist", False)))
+        history = ClipboardHistory(int(section.get("size", 10)), bool(section.get("persist", False)))
+        history.image_count = int(section.get("images", 4))
+        history.clear_after = float(section.get("clear_after", 0))
+        return history
+
+    @cached_property
+    def notifications(self):
+        """Notification history (watches the session bus; the desktop still shows the banners)."""
+        from .platform.notifications import History, Monitor
+
+        section = self.config.section("notifications")
+        history = History(int(section.get("size", 30)))
+
+        def arrived(item) -> None:
+            history.add(item)
+            self.bus.publish("notifications.changed")
+
+        history.monitor = Monitor(arrived, [str(i) for i in section.get("ignore", []) or []])
+        history.monitor.start()
+        return history
+
+    @cached_property
+    def downloads(self):
+        from .platform.downloads import DownloadWatcher
+
+        watcher = DownloadWatcher(self.bus, self.config.section("downloads"))
+        watcher.start()
+        return watcher
+
+    @cached_property
+    def calendar(self):
+        from .platform.calendar import CalendarService
+
+        return CalendarService(self.bus, self.config.section("calendar"))

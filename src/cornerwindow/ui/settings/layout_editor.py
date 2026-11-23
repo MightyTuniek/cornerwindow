@@ -12,7 +12,7 @@ from typing import Any, Callable
 import cairo
 from gi.repository import Gdk, GLib, Gtk
 
-from ...modules.layout import Layout, allowed
+from ...modules.layout import Layout, allowed, preset
 from .. import theme
 from ..widgets import chip, label
 from ..widgets.card import IconButton, resolve_icon
@@ -194,7 +194,7 @@ def layout_editor(field, value, on_change, ctx):
                 items.append(("Move down", lambda: drop(mid, dest, i + 2)))
         targets = [("top", "Move to the top row")]
         targets += [(("col", n), f"Move to column {n + 1}") for n in range(len(layout.columns))]
-        targets += [("drawer", "Move to the drawer")]
+        targets += [("drawer", "Move to the drawer"), ("tools", "Move to the tools")]
         for target, text in targets:
             if target != dest and allowed(area, target):
                 items.append((text, lambda t=target: drop(mid, t, None)))
@@ -227,6 +227,13 @@ def layout_editor(field, value, on_change, ctx):
                          "`cornerwindow settings`.", "cw-small cw-warn")
             warn.set_line_wrap(True)
             outer.pack_start(warn, False, False, 0)
+        presets = Gtk.Box(spacing=6)
+        presets.pack_start(label("Start from", "cw-dim cw-small"), False, False, 0)
+        for name, title, tip in (("essentials", "Essentials", "Display, sound, now playing, the clock, toggles "
+                                  "and the drawer; cards show up only while they have something to show"),
+                                 ("everything", "Everything", "Every card and tool")):
+            presets.pack_start(chip(title, lambda n=name: later(apply_preset, n), tip), False, False, 0)
+        outer.pack_start(presets, False, False, 0)
         section("top", "Top row", layout.top, "Drop a card here")
         for n, column in enumerate(layout.columns):
             extra = []
@@ -238,9 +245,14 @@ def layout_editor(field, value, on_change, ctx):
         tools.pack_start(chip("+ Column", lambda: later(layout.add_column, render)), False, False, 0)
         outer.pack_start(tools, False, False, 0)
         section("drawer", "Drawer tabs", layout.drawer, "Drop a drawer tab here")
+        section("tools", "Tools", layout.tools, "Drop a tool here")
         pool = layout.unplaced(sorted(catalog(), key=lambda m: info(m)["title"].lower()))
         section("pool", "Not in the panel", pool, "Every card is placed")
         outer.show_all()
+
+    def apply_preset(name: str) -> None:
+        state["layout"] = preset(name)
+        commit()
 
     def _set(v) -> None:
         state["layout"] = Layout.from_config(v or {})

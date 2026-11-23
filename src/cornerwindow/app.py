@@ -42,13 +42,19 @@ usage: cornerwindow [command]
   reload                   re-read the config files
   taskbar show|hide|status the desktop's taskbar (experimental; `show` also works when not running)
   quit                     stop the running instance
+  snapshot FILE.png [panel|window]   save what the panel shows (opens it; PNG, offscreen)
   doctor                   diagnose this machine (no GUI needed)
+
+  CORNERWINDOW_DEMO=1 cornerwindow   made-up data everywhere (a separate instance and home)
 """
 
 
 class CornerWindowApp(Gtk.Application):
     def __init__(self) -> None:
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        from . import demo
+
+        app_id = f"{APP_ID}.Demo" if demo.enabled() else APP_ID
+        super().__init__(application_id=app_id, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.island: Island | None = None
         self.settings = None
         self._reload_id = 0
@@ -76,6 +82,10 @@ class CornerWindowApp(Gtk.Application):
         self.activity = ActivityManager()
         self.actions = ActionRegistry()
         self.services = Services(self.config, self.bus, self.state)
+        from . import demo
+
+        if demo.enabled():
+            demo.install(self)  # made-up data behind every card (screenshots, trying it out)
         backend = pick_backend()
         _log.info("Window backend: %s", backend.name)
 
@@ -173,6 +183,9 @@ class CornerWindowApp(Gtk.Application):
                 widget = host.build(module_id)
                 if widget is not None:
                     island.grid.add_card(column, widget)
+        for module_id in self.config.get("modules.tools", []) or []:
+            if module_id not in hidden:
+                host.build(module_id)  # no card: commands, actions and their own timers
 
     # -- settings & live reload -----------------------------------------------------------
     def toggle_settings(self) -> None:
@@ -398,6 +411,16 @@ class CornerWindowApp(Gtk.Application):
         if cmd == "action" and len(args) > 1:
             result = self.actions.run(args[1])
             return (str(result) if result else ""), 0
+        if cmd == "snapshot" and len(args) > 1:
+            from .ui import snapshot
+
+            what = args[2] if len(args) > 2 else "panel"
+            if not island.is_open and what == "panel":
+                island.open()
+                GLib.timeout_add(int(snapshot.SETTLE_S * 1000), lambda: snapshot.save_island(self, args[1], what) and False)
+                return f"saving {args[1]} in {snapshot.SETTLE_S:.1f} s", 0
+            snapshot.save_island(self, args[1], what)
+            return args[1], 0
         if cmd in ("set", "get") and len(args) >= 2:
             return self._value(cmd, args[1], args[2] if len(args) > 2 else None)
         return HELP, 2 if cmd not in ("help", "-h", "--help") else 0

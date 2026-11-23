@@ -50,6 +50,7 @@ class Suggestion:
     icon: Any = None  # an icon name or a Gio.Icon
     closes: bool = False  # True: close the panel after running it
     complete: str | None = None  # Tab puts this text in the bar
+    confirm: bool = False  # needs Enter twice (stopping a process)
 
 
 @dataclass
@@ -144,7 +145,7 @@ def _safe(fn: Callable[[], Any]) -> None:
 class Module:
     id: str = ""
     title: str = ""
-    area: str = "main"  # "main" (a card) or "drawer" (a tab in the drawer)
+    area: str = "main"  # "main" (a card), "drawer" (a tab in the drawer) or "tool" (no card: commands only)
     icon: str = ""
     description: str = ""  # one line, shown on the settings Layout page
 
@@ -162,6 +163,8 @@ class Module:
         """(Re)read self.config. Runs after setup() and on every settings change, before build()."""
 
     def build(self):
+        if self.area == "tool":
+            return None  # tools have no card
         raise NotImplementedError
 
     def on_open(self) -> None:

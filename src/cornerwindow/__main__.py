@@ -38,6 +38,11 @@ def main(argv: list[str] | None = None) -> int:
     if backend:
         os.environ["GDK_BACKEND"] = backend
 
+    from . import demo
+
+    if demo.enabled():
+        demo.isolate()  # a throwaway home, its own D-Bus name: your real setup is never touched
+
     from .app import CornerWindowApp
 
     return CornerWindowApp().run(argv)

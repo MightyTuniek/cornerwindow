@@ -208,8 +208,11 @@ class DndToggle(Toggle):
 
 @toggle("caffeine")
 class CaffeineToggle(Toggle):
+    """Keep the screen awake: until switched off, or for a while (the picker, or `awake 1h`)."""
+
     title, icon, color = "Awake", "caffeine-cup", YELLOW
-    description = "Keep the screen from sleeping"
+    description = "Keep the screen from sleeping; click the name for 30 min, 1 h, 2 h"
+    has_picker = True
 
     def available(self) -> bool:
         return self.services.caffeine.available()
@@ -219,10 +222,43 @@ class CaffeineToggle(Toggle):
 
     def set(self, on: bool) -> None:
         self.services.caffeine.set(on)
+        tasks.on_main(self.module.awake_until, None)  # a plain switch has no end time
         if on:
             self.module.ctx.activity.show("caffeine", dot=True, color=YELLOW, persistent=True, priority=1)
         else:
             self.module.ctx.activity.clear("caffeine")
+
+    def subtitle(self) -> str | None:
+        until = self.module.awake_end
+        if until is None or not self.services.caffeine.is_on():
+            return None
+        import time as _time
+
+        return _time.strftime("Until %H:%M", _time.localtime(until))
+
+    def picker_items(self) -> list[PickItem]:
+        minutes = [int(m) for m in self.module.config.get("awake_minutes", [30, 60, 120]) or []]
+        items = [PickItem(_minutes(m), "", "timer", False, m) for m in minutes]
+        items.append(PickItem("Until I switch it off", "", "caffeine", self.is_on() and self.module.awake_end is None, 0))
+        if self.is_on():
+            items.append(PickItem("Off now", "", "clear", False, -1))
+        return items
+
+    def pick(self, item: PickItem) -> str | None:
+        if item.value == -1:
+            self.set(False)
+            return "Awake off"
+        self.services.caffeine.set(True)
+        self.module.ctx.activity.show("caffeine", dot=True, color=YELLOW, persistent=True, priority=1)
+        tasks.on_main(self.module.awake_until, item.value * 60 if item.value else None)
+        return f"Awake {item.label.lower()}"
+
+
+def _minutes(m: int) -> str:
+    if m % 60 == 0:
+        hours = m // 60
+        return f"For {hours} hour{'s' if hours != 1 else ''}"
+    return f"For {m} minutes"
 
 
 @toggle("mic")
@@ -375,6 +411,8 @@ class Toggles(Module):
         self.toggles: list[Toggle] = []
         self.tiles: dict[str, ToggleTile] = {}
         self.picking: Toggle | None = None
+        self.awake_end: float | None = None  # wall-clock time a timed Awake ends
+        self._awake_source = 0
         self.ctx.bus.subscribe("audio.changed", lambda **_: self.refresh(only=("mic",)))
 
     def configure(self) -> None:
@@ -397,6 +435,19 @@ class Toggles(Module):
         self.grid.set_min_children_per_line(int(self.config.get("per_row", 4)))
         self.grid.set_row_spacing(10)
         card.pack_start(self.grid, False, False, 0)
+        # past `rows` rows, the rest wait behind a "More" tile (it opens a second grid)
+        self.overflow = Gtk.Revealer()
+        self.overflow.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.overflow.set_transition_duration(220)
+        self.more_grid = Gtk.FlowBox()
+        self.more_grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.more_grid.set_homogeneous(True)
+        self.more_grid.set_max_children_per_line(int(self.config.get("per_row", 4)))
+        self.more_grid.set_min_children_per_line(int(self.config.get("per_row", 4)))
+        self.more_grid.set_row_spacing(10)
+        self.more_grid.set_margin_top(10)
+        self.overflow.add(self.more_grid)
+        card.pack_start(self.overflow, False, False, 0)
         self.picker = Gtk.Revealer()
         self.picker.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.picker.set_transition_duration(220)
@@ -412,17 +463,52 @@ class Toggles(Module):
             return [t for t in self.toggles if _safe_bool(t.available)]
 
         def done(available: list[Toggle]) -> None:
-            for t in available:
+            room = overflow_split(len(available), int(self.config.get("per_row", 4)),
+                                  int(self.config.get("rows", 2)))
+            for i, t in enumerate(available):
                 tile = ToggleTile(t.icon, t.title, lambda on, t=t: self._set(t, on), t.color,
                                   icon_off=t.icon_off,
                                   on_more=(lambda t=t: self.open_picker(t)) if t.has_picker else None)
                 tile.set_tooltip_text(t.description or t.title)
                 self.tiles[t.id] = tile
-                self.grid.add(tile)
+                (self.grid if i < room else self.more_grid).add(tile)
+            if room < len(available):
+                more = ToggleTile("more", "More", self._show_more, (0.36, 0.36, 0.42))
+                more.set_tooltip_text("The other quick toggles")
+                self.more_tile = more
+                self.grid.add(more)
+                if self.ctx.state.get("toggles.more", False):
+                    more.set_active(True, animate=False)
+                    self.overflow.set_reveal_child(True)
             self.grid.show_all()
+            self.more_grid.show_all()
             self.refresh()
 
         tasks.run_async(probe, done)
+
+    def awake_until(self, seconds: float | None) -> None:
+        """Switch Awake off after `seconds` (None: no end). One timer, even while collapsed."""
+        import time as _time
+
+        if self._awake_source:
+            GLib.source_remove(self._awake_source)
+            self._awake_source = 0
+        self.awake_end = _time.time() + seconds if seconds else None
+        if seconds:
+            def end() -> bool:
+                self._awake_source = 0
+                self.awake_end = None
+                tasks.run_async(lambda: self.ctx.services.caffeine.set(False),
+                                lambda _r: self.refresh(only=("caffeine",)))
+                self.ctx.activity.clear("caffeine")
+                return False
+
+            self._awake_source = GLib.timeout_add_seconds(int(seconds), end)
+        self.refresh(only=("caffeine",))
+
+    def _show_more(self, on: bool) -> None:
+        self.overflow.set_reveal_child(on)
+        self.ctx.state.set("toggles.more", on)
 
     def _set(self, t: Toggle, on: bool) -> None:
         work = t.cycle if getattr(t, "cycles", False) else (lambda: t.set(on))
@@ -568,11 +654,29 @@ class Toggles(Module):
         if bt is not None:
             cmds.append(Command(("bt",), "Connect a Bluetooth device", "bt headphones",
                                 lambda arg, t=bt: self._pick_by_name(t, arg), True))
+        awake = next((t for t in self.toggles if t.id == "caffeine" and t.id in self.tiles), None)
+        if awake is not None:
+            cmds.append(Command(("awake",), "Keep the screen awake for a while", "awake 1h · awake 30 · awake off",
+                                lambda arg, t=awake: self._awake_for(t, arg), True))
         wifi = next((t for t in self.toggles if t.id == "wifi" and t.id in self.tiles), None)
         if wifi is not None:
             cmds.append(Command(("join",), "Join a Wi-Fi network", "join home",
                                 lambda arg, t=wifi: self._pick_by_name(t, arg), True))
         return cmds
+
+    def _awake_for(self, t: Toggle, arg: str) -> str:
+        from .timer import _human, _parse_duration
+
+        arg = arg.strip().lower()
+        if arg in ("off", "stop"):
+            tasks.run_async(lambda: t.set(False), lambda _r: self._after_change(t))
+            return "Awake off"
+        seconds = _parse_duration(arg) if arg else None
+        if arg and seconds is None:
+            return "Usage: awake 1h · awake 30 · awake off"
+        item = PickItem("", value=round(seconds / 60) if seconds else 0)
+        tasks.run_async(lambda: t.pick(item), lambda _r: self._after_change(t))
+        return f"Awake for {_human(seconds)}" if seconds else "Awake until you switch it off"
 
     def _pick_by_name(self, t: Toggle, arg: str) -> str:
         arg = arg.strip().lower()
@@ -588,6 +692,14 @@ class Toggles(Module):
 
         tasks.run_async(work, lambda _m: self._after_change(t))
         return f"{t.title}: {arg}…"
+
+
+def overflow_split(count: int, per_row: int, rows: int) -> int:
+    """How many tiles go in the main grid; the rest sit behind a "More" tile, which takes the
+    last slot. rows <= 0 = no limit."""
+    if rows <= 0 or per_row <= 0 or count <= per_row * rows:
+        return count
+    return per_row * rows - 1
 
 
 def _safe_bool(fn) -> bool:

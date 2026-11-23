@@ -385,3 +385,78 @@ class Tasklist:
 
     def subscribe(self, fn: Callable[[], None]) -> Callable[[], None]:
         return self.bus.subscribe("windows.changed", fn)
+
+    # -- placing windows (the snap commands) ----------------------------------------------
+    def target(self):
+        """The window you were in before opening the panel (a live Wnck.Window), or None."""
+        if self._screen is None or self.last_active is None:
+            return None
+        return next((w for w in self._screen.get_windows() if w.get_xid() == self.last_active), None)
+
+    @staticmethod
+    def work_areas() -> list[tuple[int, int, int, int]]:
+        from gi.repository import Gdk
+
+        display = Gdk.Display.get_default()
+        out = []
+        for i in range(display.get_n_monitors()):
+            area = display.get_monitor(i).get_workarea()
+            out.append((area.x, area.y, area.width, area.height))
+        return out
+
+    def snap(self, name: str, gap: int = 0) -> str:
+        """Move the last active window to a layout ("left", "top-right", "max", "center",
+        "next-monitor", "restore"). Returns feedback text."""
+        from ...core import snap as geometry
+        from .x11 import Wnck
+
+        window = self.target()
+        if window is None:
+            return "No window to move"
+        layout = geometry.resolve(name)
+        if layout is None:
+            return f"Unknown layout {name!r}"
+        xid = window.get_xid()
+        current = tuple(window.get_client_window_geometry())
+        areas = self.work_areas() or [current]
+        cx, cy = current[0] + current[2] // 2, current[1] + current[3] // 2
+        index = next((i for i, a in enumerate(areas) if geometry.contains(a, cx, cy)), 0)
+        work = areas[index]
+        saved = self.__dict__.setdefault("_saved", {})  # xid -> geometry before our first snap
+        placed = self.__dict__.setdefault("_placed", {})  # xid -> where we last put it
+        if layout == "restore":
+            if xid not in saved:
+                return "Nothing to restore"
+            rect = saved.pop(xid)
+        elif layout == "next-monitor":
+            if len(areas) < 2:
+                return "Only one monitor"
+            rect = geometry.to_monitor(current, work, areas[(index + 1) % len(areas)])
+        elif layout == "center":
+            rect = geometry.centered(current, work)
+        else:
+            rect = geometry.layout_rect(layout, work, gap)
+        if layout != "restore" and not _near(current, placed.get(xid)):
+            saved[xid] = current  # snapping again from a snapped place keeps the original
+        placed[xid] = rect
+        try:
+            if window.is_maximized():
+                window.unmaximize()
+            if window.is_minimized():
+                window.unminimize(self._time())
+            if layout == "max":
+                window.maximize()
+            else:
+                mask = (Wnck.WindowMoveResizeMask.X | Wnck.WindowMoveResizeMask.Y
+                        | Wnck.WindowMoveResizeMask.WIDTH | Wnck.WindowMoveResizeMask.HEIGHT)
+                window.set_geometry(Wnck.WindowGravity.STATIC, mask, *rect)
+            window.activate(self._time())
+        except Exception as exc:
+            _log.debug("Could not move %s: %s", window.get_name(), exc)
+            return "That window can't be moved"
+        return {"next-monitor": "Moved to the next monitor", "restore": "Restored", "center": "Centred",
+                "max": "Maximised"}.get(layout, layout.replace("-", " ").capitalize())
+
+
+def _near(a, b, slack: int = 40) -> bool:
+    return b is not None and all(abs(x - y) <= slack for x, y in zip(a, b))

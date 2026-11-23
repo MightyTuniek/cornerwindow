@@ -88,8 +88,8 @@ class ModuleHost:
                 _log.info("Module %s not available here, hiding it", module_id)
                 return None
             widget = instance.build()
-            if widget is not None:
-                self.built.add(module_id)
+            if widget is not None or instance.area == "tool":
+                self.built.add(module_id)  # a tool has no card, but its commands and timers count
             return widget
         except Exception:
             _log.exception("Module %s failed to build", module_id)

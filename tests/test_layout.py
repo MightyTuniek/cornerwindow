@@ -20,6 +20,7 @@ def test_round_trip_keeps_config():
         "top": ["commandbar"],
         "columns": [["display", "audio", "media"], ["header", "toggles"]],
         "drawer": ["timer", "notes"],
+        "tools": [],
         "hidden": [],
     }
 
@@ -83,3 +84,22 @@ def test_empty_columns_are_dropped_on_save():
     layout = base()
     layout.add_column()
     assert len(layout.to_config()["columns"]) == 2
+
+
+def test_tools_live_only_among_tools():
+    layout = base()
+    assert allowed("tool", "tools") and not allowed("tool", ("col", 0)) and not allowed("tool", "drawer")
+    assert not allowed("main", "tools") and not allowed("drawer", "tools")
+    layout.set_visible("capture", True, area="tool")
+    assert layout.where("capture") == "tools" and layout.visible("capture")
+    assert not layout.move("capture", ("col", 0), area="tool")
+    layout.set_visible("capture", False, area="tool")
+    assert layout.to_config()["hidden"] == ["capture"] and layout.to_config()["tools"] == ["capture"]
+
+
+def test_presets_place_every_card_once():
+    from cornerwindow.modules.layout import PRESETS, preset
+
+    for name in PRESETS:
+        placed = preset(name).placed()
+        assert len(placed) == len(set(placed)), name

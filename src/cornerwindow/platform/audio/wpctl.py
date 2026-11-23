@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .. import proc
-from .base import AudioBackend, Device, Level, Stream, parse_pw_dump
+from .base import AudioBackend, Device, Level, Stream, parse_pw_dump, pw_serials
 
 _TARGET = {"sink": "@DEFAULT_AUDIO_SINK@", "source": "@DEFAULT_AUDIO_SOURCE@"}
 _SECTION = {"sink": "Sinks:", "source": "Sources:"}
@@ -77,3 +77,8 @@ class WpctlBackend(AudioBackend):
 
     def set_stream_muted(self, stream_id: str, muted: bool) -> None:
         proc.run(["wpctl", "set-mute", stream_id, "1" if muted else "0"], 2)
+
+    def move_stream(self, stream_id: str, sink_id: str) -> None:
+        # WirePlumber follows the stream's target.object metadata (the sink's serial)
+        serial = pw_serials(proc.run(["pw-dump"], 3)).get(sink_id, sink_id) if proc.which("pw-dump") else sink_id
+        proc.run(["pw-metadata", stream_id, "target.object", serial, "Spa:Id"], 2)

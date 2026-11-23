@@ -3,7 +3,7 @@
 A hidden corner island for Linux: a quick panel that springs out of your screen corner.
 
 <p align="center">
-  <img src="docs/screenshots/panel.png" width="410" alt="The open panel in the default black theme: command bar, display, sound, now playing, system, clock, quick toggles, battery, drawer and power cards">
+  <img src="docs/screenshots/panel.png" width="410" alt="The open panel in the default black theme: command bar, display, sound, now playing, a one-row system card, downloads and updates on the left; the clock with the next calendar event, quick toggles with a More tile, notifications, a low controller battery and the drawer on the right">
   <img src="docs/screenshots/glass.png" width="410" alt="The same panel in the Liquid Glass theme, with the wallpaper showing through">
 </p>
 
@@ -29,7 +29,9 @@ The trigger stays almost invisible.
 | Middle-click | Mute output |
 | Right-click | Play or pause media |
 
-**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, a green dot while music plays or the stopwatch runs, and an orange dot when a window asks for attention while the taskbar is hidden.
+**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, a green dot while music plays or the stopwatch runs, a blue dot while a notification is unread or a download is coming in, a purple dot while a coding agent works, and an orange dot when a window asks for attention while the taskbar is hidden.
+
+**Drop zone.** Drag a file, a link or some text onto the corner: the panel opens on the Shelf so you can park it there and drag it out again later.
 
 **Fullscreen.** The trigger hides while a fullscreen game or video has focus.
 
@@ -37,25 +39,41 @@ The trigger stays almost invisible.
 
 | Card | Contents |
 |---|---|
-| Display | Brightness and contrast over DDC/CI, presets, night light; one slider per monitor if you unlink them |
-| Sound | Volume, output and input devices, mic level, and a slider for each app playing sound |
+| Display | Brightness and contrast over DDC/CI, presets; one slider per monitor if you unlink them |
+| Sound | Volume and one output picker; under "Microphone & apps": mic level, input picker, a slider for each app, and which output each app plays on |
 | Now playing | Artwork, title, source, seekable progress, shuffle and repeat; chips switch between players |
-| Drives | USB sticks, SD cards and phones: open and eject (only while one is plugged in) |
-| Toggles | Wi-Fi and Bluetooth (with network and device pickers), night light, dark mode, focus, awake, power mode, VPN, airplane mode |
-| Battery | Laptop battery and wireless devices: mouse, keyboard, headset, controller (only when there is one) |
-| System | CPU, GPU, memory and network sparklines, disk space, uptime |
-| Clock | Time and date; click the date for a month calendar |
-| Drawer | Timer, stopwatch with laps, clipboard history, self-saving scratchpad |
-| Power | Lock, sleep, restart, shut down, each with press-and-hold to confirm |
-| Weather | Now, the next hours and days (off by default) |
-| Command bar | Type to open apps, switch to open windows, run commands, calculate and convert units |
+| System | CPU, GPU, memory and network in one row; click it for sparklines, disk, uptime and the busiest processes (stop one from there) |
+| Clock | Time, date and your next calendar event; click the date for a month calendar with your agenda; pin, settings and power buttons (lock, sleep, restart, shut down) |
+| Toggles | Wi-Fi and Bluetooth (with pickers), night light, dark mode, focus, awake (for 30 min, 1 h, 2 h or until off), power mode, VPN, airplane mode; more than two rows wait behind a **More** tile |
+| Notifications | What the desktop showed you, kept for when you missed it; click one to open its app |
+| Downloads | What's coming in, and what just finished, with Open and Show in folder |
+| Updates | "14 updates · 12 system · 2 Flatpak" and a button to the updater |
+| Battery | Laptop battery, and wireless devices once they run low (the Bluetooth picker shows all of them) |
+| Drives | USB sticks, SD cards and phones: open and eject |
+| Drawer | Timer, stopwatch with laps, clipboard history (text, images, pins), scratchpad, and the Shelf |
+| Command bar | Type to open apps, switch windows, run commands, calculate, convert, and everything in the tools below |
 | Apps | Your favourite and running apps, a taskbar inside the panel (shown while the taskbar is hidden, see below) |
+| Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code and Codex: tokens today, the 5-hour window and when it resets, plan limits, which project an agent is working in, from their local logs), **Power** (a card instead of the clock's button) |
 
-Choose which cards you see, and where, under **Settings → Features**: every card has a switch, and you drag it between the top row, the columns and the drawer. Quick toggles and power buttons are switched and reordered the same way on their own pages.
+**Only what matters right now.** Notifications, Downloads, Updates, Battery, Drives and Now playing hide themselves while they have nothing to show, so on a quiet day the panel is just Display, Sound, the clock, your toggles and the drawer. The drawer opens on a running timer or stopwatch.
+
+**Tools** add commands to the bar without adding a card:
+
+| Tool | Commands |
+|---|---|
+| Capture | `shot` (area; `shot window`, `shot screen`): saved to Pictures/Screenshots and copied. `pick`: a colour from anywhere on screen, copied as hex (or rgb, hsl). `ocr`: copy the text in an area (needs tesseract). `qr`: read a QR code (needs zbar-tools) |
+| Window layouts | `snap left`, `snap tr`, `snap left-third`, `snap max`, `snap center`, `snap next` (next monitor), `snap restore`; each is also an action for a keyboard shortcut. X11 |
+| Snippets | `;sig` pastes your signature into the window you were in; `{date}`, `{time}`, `{clipboard}` are filled in. `sn add name text` adds one |
+| Processes | `top` (busiest; <kbd>Enter</kbd> twice stops one), `kill firefox`, `port 3000` (what listens there), `ports`, `ip` |
+| Alerts | Off by default: a notification when the CPU stays busy, the machine runs hot, or memory or the disk fill up. It checks in the background, the one thing that does |
+
+Choose which cards you see, and where, under **Settings → Features**: every card and tool has a switch, and you drag cards between the top row, the columns and the drawer. **Essentials** and **Everything** at the top of the page set the whole layout in one click. Quick toggles and power buttons are switched and reordered the same way on their own pages. For a tighter panel, set **Look → Density** to compact.
 
 - Display changes real monitor settings over DDC/CI, not a dimming filter. Click a preset (Day, Evening, Night, Movie) to apply it, or hold one to save your current values into it.
 - Now playing works with every player that speaks MPRIS: Spotify, VLC, mpv, Rhythmbox, Strawberry, Cider (Apple Music), KDE Connect (your phone), and browser tabs on YouTube, YouTube Music, SoundCloud, Apple Music, Spotify web, Deezer, Tidal, Twitch and more, labelled by site ("YouTube · Firefox"). MPD works directly too, without mpDris2. It appears only while something is loaded.
-- Click the label under the Wi-Fi or Bluetooth toggle (or right-click the toggle) to pick a network or connect a paired device.
+- Click the label under the Wi-Fi or Bluetooth toggle (or right-click the toggle) to pick a network or connect a paired device; under Awake, to keep the screen on for a while.
+- Events come from GNOME Calendar and Evolution (including Google, Nextcloud and Exchange accounts added in Online Accounts), read from their files, plus any `.ics` file or link you add under Settings → Calendar.
+- The clipboard history keeps the last few images too, lets you pin entries, and can clear the system clipboard a while after you copy (`clear_after`, for passwords); `plain` turns the clipboard into plain text.
 
 #### Without a taskbar (experimental)
 
@@ -96,7 +114,13 @@ Start typing anywhere in the open panel, or click the bar. The **?** button at i
 | `sw` | Start or pause the stopwatch |
 | `seek +30` | Skip ahead in what's playing (`seek 1:20`, `shuffle`, `repeat`, `player spotify`) |
 | `bt headphones` | Connect a paired Bluetooth device |
-| `cb pass` | Search the clipboard history; <kbd>Enter</kbd> copies |
+| `cb pass` | Search the clipboard history; <kbd>Enter</kbd> copies (`plain` drops the formatting) |
+| `shot` | Screenshot an area (`shot window`, `shot screen`); also `pick`, `ocr`, `qr` |
+| `snap left` | Move the window you were in: halves, quarters, thirds, `max`, `center`, `next`, `restore` |
+| `;sig` | Paste a snippet (`sn` lists them, `sn add sig Kind regards` adds one) |
+| `top` | Busiest processes; also `kill firefox`, `port 3000`, `ip` |
+| `out speakers` | Switch the sound output; `awake 1h` keeps the screen on for an hour |
+| `nn invoice` | Search your notifications; `dl` lists downloads, `updates` opens the updater |
 | `note buy milk` | Add a line to Notes (`note milk` also finds lines) |
 | `restart` | `lock`, `sleep`, `logout`, `restart`, `shutdown`; the last three need <kbd>Enter</kbd> twice |
 | `2*(3+4)` | Calculate; <kbd>Enter</kbd> copies the answer. Also `15% of 80`, `80 + 15%`, `0xff to bin`, `1<<4` |
@@ -140,6 +164,9 @@ cornerwindow actions                       # list bindable actions
 cornerwindow action display.preset.night
 cornerwindow settings display              # open the settings window, optionally on a page
 cornerwindow taskbar show                  # bring the taskbar back (also when CornerWindow isn't running)
+cornerwindow action window.snap.left       # bind actions like this one to keyboard shortcuts
+cornerwindow snapshot ~/panel.png          # a picture of the open panel (drawn offscreen)
+CORNERWINDOW_DEMO=1 cornerwindow           # try it with made-up data (its own instance and settings)
 ```
 
 For the fastest possible hotkey, bind the D-Bus call directly. This is what `./install.sh` does:
@@ -169,7 +196,7 @@ radius = 16
 scroll = "audio.volume.step"   # scroll changes volume instead of brightness
 
 [modules]
-columns = [["header", "display", "audio"], ["toggles", "drawer", "power"]]
+columns = [["header", "display", "audio"], ["toggles", "notifications", "drawer"]]
 ```
 
 ### Settings window
@@ -188,7 +215,7 @@ Click the gear button in the panel, or run `cornerwindow settings`. Options are 
 
 ### Theming
 
-The island is solid black by default. Switch on **Liquid Glass** with the *Glass* quick toggle, in Settings → Look, or with `cornerwindow set panel.glass true`. The switch applies instantly, without rebuilding the panel.
+The island is solid black by default. Switch on **Liquid Glass** in Settings → Look, with `cornerwindow action theme.glass`, or with the *Glass* quick toggle (add it under Settings → Toggles). The switch applies instantly, without rebuilding the panel.
 
 Liquid Glass is not a blur with a white wash. The panel is a lens over whatever is behind it:
 
@@ -213,13 +240,15 @@ To restyle anything, put CSS in `~/.config/cornerwindow/style.css`. Glass styles
 - The window is never resized or moved while animating. It is sized once, everything outside the outline is transparent and click-through, and only the outline is redrawn.
 - During the morph, each card is drawn once into an offscreen image and then just blended in. Nothing is laid out again mid-animation.
 - Sliders follow the pointer exactly and stretch with a rubber-band effect at the ends. Hardware catches up in the background through a writer that only sends the latest value, so dragging never lags.
-- Nothing ticks while the panel is collapsed, so idle CPU use is 0%.
+- Nothing ticks while the panel is collapsed, so idle CPU use is 0%. Notifications and downloads are watched by the session bus and the file system, which cost nothing until something happens. The only exceptions are ones you ask for: Alerts (a check every 15 s) and a timed Awake (one timer).
 
 Set `CORNERWINDOW_FPS=1` to print frame statistics for each animation.
 
 ## Development
 
 Writing your own modules, the layout of the code and running the tests are covered in [`docs/DEVELOPING.md`](docs/DEVELOPING.md).
+
+The pictures in this README are made by the app itself, in demo mode, headless: `scripts/screenshots.sh` regenerates all of them (or `scripts/screenshots.sh panel glass` just those) into `docs/screenshots/`. It needs `xvfb` and `dbus` besides GTK.
 
 ## License
 

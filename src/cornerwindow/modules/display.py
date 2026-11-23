@@ -135,7 +135,7 @@ class Display(Module):
             self._wire_preset(button, preset["name"])
             self.preset_chips[preset["name"]] = button
             row.add(button)
-        if self.night.available:
+        if self.night.available and self._night_chip_wanted():
             self.night_chip = chip("Night light", self.toggle_night)
             row.add(self.night_chip)
         else:
@@ -156,6 +156,20 @@ class Display(Module):
             self._ready()
         self._night_changed()
         return card
+
+    def _night_chip_wanted(self) -> bool:
+        """The chip repeats the Night quick toggle: show it only when that toggle isn't on screen
+        (night_chip = "auto"), or as configured (true / false)."""
+        wanted = self.config.get("night_chip", "auto")
+        if wanted != "auto":
+            return str(wanted).lower() not in ("false", "0", "no", "off", "")
+        cfg = self.ctx.config
+        hidden = set(cfg.get("modules.hidden", []) or [])
+        placed = list(cfg.get("modules.top", []) or [])
+        for column in cfg.get("modules.columns", []) or []:
+            placed += list(column)
+        toggles_shown = "toggles" in placed and "toggles" not in hidden
+        return not (toggles_shown and "night_light" in (cfg.get("toggles.items", []) or []))
 
     def _wire_preset(self, button: Gtk.Button, name: str) -> None:
         pressed = {"at": 0.0}

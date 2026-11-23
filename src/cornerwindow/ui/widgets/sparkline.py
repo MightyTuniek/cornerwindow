@@ -10,9 +10,10 @@ from gi.repository import Gtk
 
 class Sparkline(Gtk.DrawingArea):
     def __init__(self, points: int = 40, color=None, maximum: float | None = 100.0,
-                 height: int = 26) -> None:
+                 height: int = 26, data: deque | None = None) -> None:
         super().__init__()
-        self.data: deque[float] = deque(maxlen=points)
+        # `data` may be shared: a module that keeps the history survives widget rebuilds
+        self.data: deque[float] = data if data is not None else deque(maxlen=points)
         self.color = color
         self.maximum = maximum
         self.set_size_request(-1, height)
@@ -20,6 +21,9 @@ class Sparkline(Gtk.DrawingArea):
 
     def push(self, value: float) -> None:
         self.data.append(max(value, 0.0))
+        self.redraw()
+
+    def redraw(self) -> None:
         if self.get_mapped():
             self.queue_draw()
 

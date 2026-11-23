@@ -76,9 +76,8 @@ class Battery(Module):
         for child in self.rows.get_children():
             self.rows.remove(child)
             child.destroy()
-        show_peripherals = self.config.get("peripherals", True)
-        devices = [d for d in self.devices if d.is_laptop or (show_peripherals and d.kind != "battery")
-                   or d.kind == "ups"]
+        devices = shown_devices(self.devices, self.config.get("peripherals", "low"),
+                                float(self.config.get("peripheral_low", 20)))
         for device in devices:
             self.rows.pack_start(self._laptop_row(device) if device.is_laptop else self._device_row(device),
                                  False, False, 0)
@@ -117,6 +116,20 @@ class Battery(Module):
             return " · ".join(f"{'Battery' if d.is_laptop else d.model} {round(d.percent)}%" for d in self.devices)
 
         return [Command(("battery", "bat"), "Battery levels", "battery", run)]
+
+
+def shown_devices(devices: list, peripherals, low: float) -> list:
+    """The laptop's battery (and a UPS) always; wireless devices by `peripherals`:
+    "always", "low" (only those at or below `low` %, the Bluetooth picker shows the rest) or "never".
+    True / False mean always / never (older configs)."""
+    mode = {True: "always", False: "never"}.get(peripherals, str(peripherals))
+    out = []
+    for d in devices:
+        if d.is_laptop or d.kind == "ups":
+            out.append(d)
+        elif d.kind != "battery" and (mode == "always" or (mode == "low" and d.percent <= low)):
+            out.append(d)
+    return out
 
 
 def _status(d) -> str:

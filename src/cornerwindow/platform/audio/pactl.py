@@ -58,3 +58,6 @@ class PactlBackend(AudioBackend):
 
     def set_stream_muted(self, stream_id: str, muted: bool) -> None:
         proc.run(["pactl", "set-sink-input-mute", stream_id, "1" if muted else "0"], 2)
+
+    def move_stream(self, stream_id: str, sink_id: str) -> None:
+        proc.run(["pactl", "move-sink-input", stream_id, sink_id], 2)

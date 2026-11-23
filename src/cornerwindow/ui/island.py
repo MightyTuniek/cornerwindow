@@ -57,6 +57,7 @@ class Island(Gtk.Window):
         self.on_type: Callable[[str], bool] | None = None
         self.on_escape: list[Callable[[], bool]] = []  # return True to swallow Esc
         self.keep_open: list[Callable[[], bool]] = []  # e.g. "the settings window has focus"
+        self.on_drag_hover: list[Callable[[], None]] = []  # something is dragged over the trigger
         # Windows docked to the panel (settings, anything added later) follow it through these:
         # called after every change of panel_rect() (size, corner, monitor), never assumed.
         self.on_geometry: list[Callable[[], None]] = []
@@ -89,6 +90,13 @@ class Island(Gtk.Window):
                              | Gdk.EventMask.SMOOTH_SCROLL_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
                              | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         self.root.get_style_context().add_class("cw-root")
+        # Dragging a file over the collapsed corner opens the panel (the Shelf takes the drop).
+        self.root.drag_dest_set(0, [], Gdk.DragAction.COPY)
+        self.root.drag_dest_add_uri_targets()
+        self.root.drag_dest_add_text_targets()
+        self.root.connect("drag-motion", self._drag_motion)
+        if self.p.get("density", "comfortable") == "compact":
+            self.root.get_style_context().add_class("cw-compact")
         self.add(self.root)
 
         self.grid: CardGrid | None = None
@@ -153,6 +161,10 @@ class Island(Gtk.Window):
         self.bg = Gdk.RGBA()
         if not self.bg.parse(str(p.get("background", "#000000"))):
             self.bg.parse("#000000")
+        root = getattr(self, "root", None)
+        if root is not None:  # density: tighter cards and type (CSS, so a reload is only a relayout)
+            ctx = root.get_style_context()
+            (ctx.add_class if p.get("density", "comfortable") == "compact" else ctx.remove_class)("cw-compact")
 
     # == theme =======================================================================
     def set_theme(self, palette: theme.Palette, glass_config: GlassConfig, backdrop=None) -> None:
@@ -376,6 +388,13 @@ class Island(Gtk.Window):
             if self.is_open:
                 self.h.to(height)
                 self.anim.kick()
+
+    def _drag_motion(self, _widget, context, _x, _y, time_) -> bool:
+        if not self.is_open and self.on_drag_hover:
+            for hook in list(self.on_drag_hover):
+                hook()
+        Gdk.drag_status(context, 0, time_)  # the root itself takes nothing; the Shelf does
+        return True
 
     # == state changes =================================================================
     def toggle(self, time_: int = 0) -> None:
