@@ -2,6 +2,11 @@
 
 A hidden corner island for Linux: a quick panel that springs out of your screen corner.
 
+<p align="center">
+  <img src="docs/screenshots/panel.png" width="410" alt="The open panel in the default black theme: command bar, display, sound, now playing, system, clock, quick toggles, battery, drawer and power cards">
+  <img src="docs/screenshots/glass.png" width="410" alt="The same panel in the Liquid Glass theme, with the wallpaper showing through">
+</p>
+
 A tiny black quarter-circle, the **trigger**, sits in a corner of your screen. Click it and it springs open into the **panel**, with cards pouring out of the corner one after another. Click outside, press <kbd>Esc</kbd> or click the trigger again and it folds back up.
 
 It runs on GNOME, KDE, Hyprland, Sway and more, on X11 or Wayland. Each feature checks whether it works on your machine and hides itself if it doesn't. Requires Python 3.11 or newer, plus PyGObject and pycairo from your distro; `./install.sh` handles them.
@@ -11,6 +16,10 @@ It runs on GNOME, KDE, Hyprland, Sway and more, on X11 or Wayland. Each feature 
 ### Collapsed
 
 The trigger stays almost invisible.
+
+<p align="center">
+  <img src="docs/screenshots/trigger.png" width="522" alt="The collapsed trigger in a screen corner: a green dot while music plays, a brightness arc, a volume arc and a timer ring">
+</p>
 
 | Input | Effect |
 |---|---|
@@ -66,6 +75,10 @@ The taskbar comes back when you switch the setting off and when CornerWindow qui
 #### Command bar
 
 Start typing anywhere in the open panel, or click the bar. The **?** button at its right end (or typing `?`) opens a scrollable list of everything below; click an example to put it in the bar.
+
+<p align="center">
+  <img src="docs/screenshots/commandbar.png" width="700" alt="The command bar with its ? list open, showing examples for opening, running and searching">
+</p>
 
 | Input | Effect |
 |---|---|
@@ -162,6 +175,10 @@ columns = [["header", "display", "audio"], ["toggles", "drawer", "power"]]
 ### Settings window
 
 Click the gear button in the panel, or run `cornerwindow settings`. Options are grouped into pages such as General, Trigger, Look and Motion, plus one for each card. A Files page shows each config file and has a raw editor for yours.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="720" alt="The settings window docked beside the open panel, on the Features page where cards are switched on and off and dragged between columns">
+</p>
 
 - **Live changes.** The panel rebuilds in place and springs to its new size. A running timer, your clipboard history and the settings window itself carry over.
 - **Minimal writes.** Only values that differ from the defaults and machine file go into your file. Comments and formatting survive; the file is edited in place.
