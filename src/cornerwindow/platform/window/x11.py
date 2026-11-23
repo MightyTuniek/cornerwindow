@@ -45,11 +45,11 @@ class X11Backend(WindowBackend):
         if gdk_window:
             gdk_window.focus(stamp)
 
-    def release_focus(self, window: Gtk.Window) -> None:
+    def release_focus(self, window: Gtk.Window, hand_back: bool = True) -> None:
         had_focus = window.is_active()
         window.set_accept_focus(False)
         previous, self._previous = self._previous, None
-        if had_focus and previous is not None:
+        if had_focus and hand_back and previous is not None:
             try:
                 previous.activate(self._server_time(window))
             except Exception as exc:  # window may have closed meanwhile

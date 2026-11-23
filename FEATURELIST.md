@@ -4,7 +4,8 @@ The cards inside the open panel. The id is what goes in `[modules]` in the confi
 
 | Card | Id | Contents |
 |---|---|---|
-| Command bar | `commandbar` | Type to open apps, run commands, calculate, convert units (`5 km to mi`) and search the web (top row) |
+| Command bar | `commandbar` | Type to open apps, switch to open windows, run commands, calculate, convert units (`5 km to mi`) and search the web (top row) |
+| Apps | `windows` | Favourite and running apps, grouped by app: click to switch (or minimise the app you're in), window list for apps with several windows, middle-click for a new window, orange dot on the trigger when a window asks for attention; shown while `[experimental] hide_taskbar` is on, or always with `[windows] show = "always"`; X11 only (top row) |
 | Display | `display` | Brightness and contrast over DDC/CI, presets, night light; per-monitor brightness sliders when unlinked |
 | Sound | `audio` | Volume slider, mic mute, output device switcher; under "Microphone & apps": mic level, input device switcher, per-app volume |
 | Now Playing | `media` | Any MPRIS player or MPD: artwork, title, source ("YouTube · Firefox"), controls, seekable progress with times, shuffle/repeat, player chips; click the artwork to raise the player; green dot on the trigger while playing |
@@ -38,6 +39,12 @@ The ids go in `[toggles] items`. Each hides itself when its service is missing.
 | Airplane | `airplane` | Wi-Fi, Bluetooth and mobile broadband off together |
 | Mute mic | `mic` | Microphone mute (not in the default list) |
 | Glass | `glass` | The Liquid Glass theme |
+
+## Experimental
+
+| Feature | Switch | What it does |
+|---|---|---|
+| Hide the taskbar | Settings → Experimental, `[experimental] hide_taskbar = true`, action `taskbar.toggle` | Hides Zorin Taskbar / Dash to Panel (auto-hide with every reveal trigger off) or Dash to Dock / Ubuntu Dock (extension off) while CornerWindow runs; restored on quit or with `cornerwindow taskbar show` |
 
 ## Themes
 

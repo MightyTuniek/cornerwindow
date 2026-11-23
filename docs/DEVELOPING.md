@@ -34,10 +34,10 @@ Everything a module needs is on `self.ctx`:
 | Member | Purpose |
 |---|---|
 | `section` | This module's `[uptime_card]` config table |
-| `services` | `display`, `audio`, `media`, `battery`, `nightlight`, `wifi`, `bluetooth`, `vpn`, `airplane`, `power_profiles`, `dark_mode`, `dnd`, `caffeine`, `clipboard` |
+| `services` | `display`, `audio`, `media`, `battery`, `nightlight`, `wifi`, `bluetooth`, `vpn`, `airplane`, `power_profiles`, `dark_mode`, `dnd`, `caffeine`, `clipboard`, `windows` (open windows by app), `taskbar` |
 | `actions.register(name, fn)` | Register a named action that config can bind to trigger gestures |
 | `activity.show(id, level=..., label=..., dot=..., color=...)` | Show a live activity on the collapsed trigger |
-| `bus.subscribe(topic, fn)` | Subscribe to events such as `display.changed`, `display.monitor_changed`, `audio.changed`, `media.changed`, `battery.changed` |
+| `bus.subscribe(topic, fn)` | Subscribe to events such as `display.changed`, `display.monitor_changed`, `audio.changed`, `media.changed`, `battery.changed`, `windows.changed` |
 | `every(sec, fn)` | Call `fn` every `sec` seconds while the panel is open |
 | `run_async(fn, then)` | Run `fn` off the main thread, then call `then` with the result |
 | `notify(title, body)` | Show a desktop notification |
@@ -104,9 +104,11 @@ src/cornerwindow/
     display/        native DDC/CI (ddc_i2c), ddcutil, laptop backlight, xrandr gamma, night light
     audio/          wpctl (PipeWire), pactl (PulseAudio)
     media/          MPRIS and MPD players, site detection for browser tabs (sites.py), MediaService
-    window/         X11 (EWMH + Wnck) and wlr-layer-shell placement
+    window/         X11 (EWMH + Wnck) and wlr-layer-shell placement; tasklist.py: open windows by app
+                    (the Apps card)
     network/        Wi-Fi (networks, joining), Bluetooth devices, VPN, airplane mode
-    desktop/        dark mode, do-not-disturb and other desktop settings
+    desktop/        dark mode, do-not-disturb and other desktop settings; taskbar.py: hiding the
+                    desktop's taskbar (experimental), with what it changed saved for restoring
     power/          lock, sleep, restart, shut down, sleep inhibit, power profiles, UPower batteries
     sensors/        CPU, GPU, memory, disk and uptime
     backdrop/       what's behind our windows, for Liquid Glass (live X11 compositing, wallpaper)
@@ -143,5 +145,6 @@ The tests cover:
 - the wpctl, ddcutil, pw-dump, pactl, nmcli, UPower and MPD parsers
 - media: site detection for browser tabs, player ranking, seek parsing
 - the calculator, unit conversion, app ranking, timer and stopwatch, month grids
+- hiding and restoring the taskbar, matching windows to apps, the Apps card's order and cycling
 - Open-Meteo forecast and geocoder parsing
 - module loading

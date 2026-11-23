@@ -369,7 +369,9 @@ class Island(Gtk.Window):
         self.backend.take_focus(self, time_)
         self.anim.kick()
 
-    def close(self, reason: str = "") -> None:
+    def close(self, reason: str = "", hand_back: bool = True) -> None:
+        """hand_back=False: don't refocus the window that had focus before opening
+        (the user just switched to another one)."""
         if not self.is_open:
             return
         _log.debug("close %s", reason)
@@ -377,7 +379,7 @@ class Island(Gtk.Window):
         self.pinned = False
         self._cancel_timers()
         self.root.set_above_child(True)
-        self.backend.release_focus(self)
+        self.backend.release_focus(self, hand_back)
         a = self.a
         self.fade.to(0.0, a.get("content_out_response", 0.12), 1.0)
         self.content.to(0.0, 0.3, 1.0)

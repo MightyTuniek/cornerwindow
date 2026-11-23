@@ -42,7 +42,7 @@ class LayerShellBackend(WindowBackend):
         GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.ON_DEMAND)
         window.present()
 
-    def release_focus(self, window: Gtk.Window) -> None:
+    def release_focus(self, window: Gtk.Window, hand_back: bool = True) -> None:
         GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
 
     def raise_above(self, window: Gtk.Window) -> None:

@@ -34,7 +34,9 @@ class WindowBackend:
         window.set_accept_focus(True)
         window.present_with_time(time or Gtk.get_current_event_time())
 
-    def release_focus(self, window: Gtk.Window) -> None:
+    def release_focus(self, window: Gtk.Window, hand_back: bool = True) -> None:
+        """Stop taking keyboard focus. hand_back=False: don't refocus the previous window,
+        because the user just picked another one (the Apps card)."""
         window.set_accept_focus(False)
 
     def raise_above(self, window: Gtk.Window) -> None:

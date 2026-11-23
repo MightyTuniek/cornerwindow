@@ -24,6 +24,14 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
+    if command == "taskbar" and not _instance_running():
+        # the escape hatch: bring the taskbar back even when CornerWindow isn't running
+        from .platform.desktop.taskbar import Taskbar, command
+
+        output, status = command(Taskbar(), argv[2:])
+        print(output)
+        return status
+
     from .platform.session import detect, gdk_backend_override
 
     backend = gdk_backend_override(detect())
@@ -33,6 +41,16 @@ def main(argv: list[str] | None = None) -> int:
     from .app import CornerWindowApp
 
     return CornerWindowApp().run(argv)
+
+
+def _instance_running() -> bool:
+    from . import APP_ID
+    from .platform import dbus
+
+    try:
+        return dbus.name_has_owner(dbus.session(), APP_ID)
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":

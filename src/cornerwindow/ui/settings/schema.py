@@ -115,6 +115,8 @@ SECTIONS: list[Section] = [
     ]),
     Section("commandbar", "Command bar", "search", [
         F("apps", "Find apps", "bool", "Type an app's name and press Enter to open it."),
+        F("windows", "Switch to open windows", "bool", "Typing an app's name or a window title also "
+          "offers its open windows."),
         F("search_url", "Web search", "text", "{} is replaced by what you typed. Empty = no web row."),
     ], "Start typing anywhere in the open panel. Also: sums (2*21) and units (5 km to mi)."),
     Section("display", "Display", "brightness", [
@@ -178,6 +180,12 @@ SECTIONS: list[Section] = [
         F("hold_ms", "Hold to confirm", "int", min=100, max=3000, step=50, unit="ms"),
         F("lock_hold_ms", "Hold to lock", "int", min=0, max=3000, step=50, unit="ms"),
     ]),
+    Section("windows", "Apps", "apps", [
+        F("show", "Show the Apps card", "choice", "Auto: only while the taskbar is hidden (Experimental).",
+          choices=["auto", "always"]),
+        F("favorites", "Show favourites", "bool", "The apps pinned to the desktop's dash or taskbar."),
+        F("attention_dot", "Dot when a window needs attention", "bool", "Orange, on the corner."),
+    ], "Click an app to switch to it, middle-click for a new window, right-click for its windows."),
     Section("weather", "Weather", "weather", [
         F("place", "City", "place_search", "Looked up on Open-Meteo when you press Find.",
           keys=("place", "latitude", "longitude")),
@@ -187,6 +195,12 @@ SECTIONS: list[Section] = [
         F("units", "Units", "choice", choices=["metric", "imperial"]),
         F("refresh_minutes", "Refresh every", "int", min=5, max=240, step=5, unit="min"),
     ]),
+    Section("experimental", "Experimental", "experimental", [
+        F("hide_taskbar", "Hide the taskbar", "bool", "Works with Zorin Taskbar, Dash to Panel, Dash to Dock and "
+          "Ubuntu Dock. Switch apps with the Apps card, the command bar, or Alt+Tab. The taskbar comes back "
+          "when CornerWindow quits; `cornerwindow taskbar show` restores it by hand. Its tray icons and "
+          "clock go with it."),
+    ], "Features that aren't finished yet."),
 ]
 
 SKIP_SECTIONS = {"match"}

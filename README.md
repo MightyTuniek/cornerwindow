@@ -20,7 +20,7 @@ The trigger stays almost invisible.
 | Middle-click | Mute output |
 | Right-click | Play or pause media |
 
-**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, and a green dot while music plays or the stopwatch runs.
+**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, a green dot while music plays or the stopwatch runs, and an orange dot when a window asks for attention while the taskbar is hidden.
 
 **Fullscreen.** The trigger hides while a fullscreen game or video has focus.
 
@@ -39,7 +39,8 @@ The trigger stays almost invisible.
 | Drawer | Timer, stopwatch with laps, clipboard history, self-saving scratchpad |
 | Power | Lock, sleep, restart, shut down, each with press-and-hold to confirm |
 | Weather | Now, the next hours and days (off by default) |
-| Command bar | Type to open apps, run commands, calculate and convert units |
+| Command bar | Type to open apps, switch to open windows, run commands, calculate and convert units |
+| Apps | Your favourite and running apps, a taskbar inside the panel (shown while the taskbar is hidden, see below) |
 
 Choose which cards you see, and where, under **Settings → Features**: every card has a switch, and you drag it between the top row, the columns and the drawer. Quick toggles and power buttons are switched and reordered the same way on their own pages.
 
@@ -47,13 +48,28 @@ Choose which cards you see, and where, under **Settings → Features**: every ca
 - Now playing works with every player that speaks MPRIS: Spotify, VLC, mpv, Rhythmbox, Strawberry, Cider (Apple Music), KDE Connect (your phone), and browser tabs on YouTube, YouTube Music, SoundCloud, Apple Music, Spotify web, Deezer, Tidal, Twitch and more, labelled by site ("YouTube · Firefox"). MPD works directly too, without mpDris2. It appears only while something is loaded.
 - Click the label under the Wi-Fi or Bluetooth toggle (or right-click the toggle) to pick a network or connect a paired device.
 
+#### Without a taskbar (experimental)
+
+CornerWindow can hide the desktop's taskbar while it runs: switch on **Settings → Experimental → Hide the taskbar** (`[experimental] hide_taskbar = true`). It works with Zorin Taskbar and Dash to Panel (their auto-hide is set so the panel never comes back on its own, and maximised windows get its space) and with Dash to Dock and Ubuntu Dock (the extension is switched off).
+
+You switch apps from the panel instead:
+
+| Where | How |
+|---|---|
+| Apps card (top row) | Click an app to switch to it; click the app you're in to minimise it. An app with several windows opens a list to pick one or close it. Middle-click opens a new window, right-click shows the windows. Favourites from the desktop's dash or taskbar stay there for one-click launching. |
+| Command bar | Type part of an app's name or a window's title and press <kbd>Enter</kbd> to switch to it. `desktop` shows the desktop. |
+| Trigger | Bind `windows.cycle` to a gesture (Settings → Trigger) to scroll through windows without opening the panel. |
+| Keyboard | <kbd>Alt</kbd>+<kbd>Tab</kbd> and <kbd>Super</kbd> keep working. |
+
+The taskbar comes back when you switch the setting off and when CornerWindow quits (logging out included), and is hidden again on the next start. If CornerWindow ever crashes with the taskbar hidden, run `cornerwindow taskbar show`. The taskbar's tray icons and clock are hidden with it; the Activities overview and Zorin Taskbar's <kbd>Super</kbd>+<kbd>I</kbd> still show it. X11 only for now: on Wayland the Apps card can't see other apps' windows.
+
 #### Command bar
 
 Start typing anywhere in the open panel:
 
 | Input | Effect |
 |---|---|
-| `firefox` | Open an app (any installed app, by name or keyword) |
+| `firefox` | Switch to Firefox if it's open, or open it (any installed app, by name or keyword) |
 | `b 40` | Set brightness to 40 (`b 40 2` sets only the second monitor) |
 | `night` | Apply the Night preset |
 | `timer 10` | Start a 10-minute timer |
@@ -97,6 +113,7 @@ cornerwindow get contrast
 cornerwindow actions                       # list bindable actions
 cornerwindow action display.preset.night
 cornerwindow settings display              # open the settings window, optionally on a page
+cornerwindow taskbar show                  # bring the taskbar back (also when CornerWindow isn't running)
 ```
 
 For the fastest possible hotkey, bind the D-Bus call directly. This is what `./install.sh` does:

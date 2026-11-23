@@ -40,6 +40,17 @@ gdbus call --session --dest io.github.cornerwindow --object-path /io/github/corn
 pkill -f 'python3 -m cornerwindow' >/dev/null 2>&1 || true
 ok "stopped"
 
+# [experimental] hide_taskbar: quitting restores the taskbar, but not after a crash or a kill
+if [ -f "$DATA_DIR/taskbar.json" ]; then
+  say "Restoring the taskbar"
+  if "$BIN" taskbar show >/dev/null 2>&1 || \
+     PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/src" python3 -m cornerwindow taskbar show >/dev/null 2>&1; then
+    ok "taskbar back"
+  else
+    warn "could not restore it; re-enable its auto-hide settings or extension by hand"
+  fi
+fi
+
 say "Removing launcher and autostart"
 rm -f "$BIN" "$AUTOSTART"
 ok "$BIN, $AUTOSTART"

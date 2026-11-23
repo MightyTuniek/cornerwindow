@@ -61,7 +61,7 @@ stagger = 0.11                # delay between cards as they pour out of the corn
 slow_motion = 1.0             # >1 slows every animation down (great for tuning)
 
 [modules]
-top = ["commandbar"]
+top = ["commandbar", "windows"]   # windows = the Apps strip, shown while the taskbar is hidden (see [windows])
 # Columns left -> right, cards top -> bottom. Any module id works anywhere.
 columns = [
   ["display", "audio", "media", "drives", "glance"],
@@ -73,6 +73,7 @@ search_paths = []             # extra folders with your own module .py files
 
 [commandbar]
 apps = true                   # typing an app's name offers to open it
+windows = true                # ...and to switch to its open windows
 search_url = "https://duckduckgo.com/?q={}"   # last row: search the web ({} = what you typed; "" = off)
 
 [display]
@@ -161,6 +162,19 @@ persist = false               # keep history across restarts (stored in ~/.local
 items = ["lock", "suspend", "reboot", "poweroff"]
 hold_ms = 600                 # hold this long to confirm
 lock_hold_ms = 250
+
+[windows]
+# The Apps card: your favourite and running apps, a taskbar inside the panel. Click to switch
+# (the app you're in: minimise), middle-click for a new window, right-click for its windows.
+show = "auto"                 # auto (only while [experimental] hide_taskbar is on) | always
+favorites = true              # also show the apps pinned to the desktop's dash / taskbar
+attention_dot = true          # orange dot on the corner when a window asks for attention
+
+[experimental]
+# Not finished; may misbehave.
+hide_taskbar = false          # hide the desktop's taskbar while CornerWindow runs (Zorin Taskbar,
+                              # Dash to Panel, Dash to Dock, Ubuntu Dock). Comes back when CornerWindow
+                              # quits; `cornerwindow taskbar show` restores it by hand.
 
 [weather]
 # Switch the Weather card on under Settings → Features, then pick your city under Settings → Weather

@@ -160,6 +160,8 @@ class CommandBar(Module):
         results = [Result(c.title + (f"  {a}" if a and c.takes_arg else ""), c.usage,
                           lambda c=c, a=a: c.run(a)) for c, a, _e in found[:MAX_RESULTS]]
         query = text.strip()
+        if self.config.get("windows", True) and len(query) >= 2 and not answered:
+            results += self._window_results(query)
         if self.config.get("apps", True) and len(query) >= 2 and not answered:
             room = max(MAX_RESULTS - len(results), 2 if not any_exact else 0)
             for app in rank_apps(query, self._apps.entries, room):
@@ -235,6 +237,20 @@ class CommandBar(Module):
             return
         self.entry.set_text("")
         self._feedback(feedback or result.title)
+
+    def _window_results(self, query: str) -> list[Result]:
+        """Open windows matching what you typed: Enter switches to one."""
+        windows = self.ctx.services.windows
+        if not windows.available():
+            return []
+
+        def switch(window) -> str:
+            self.ctx.island.close("switch", hand_back=False)  # first, so it won't take focus back
+            windows.activate(window)
+            return ""
+
+        return [Result(window.title, "Switch to", lambda w=window: switch(w), group.icon or "app", True)
+                for group, window in windows.find(query, 3)]
 
     def _launch(self, app: AppEntry) -> str:
         display = Gdk.Display.get_default()

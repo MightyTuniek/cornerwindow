@@ -29,6 +29,8 @@ class Services:
             self.audio.max_volume = float(config.section("audio").get("max_volume", 100)) / 100.0
         if "media" in self.__dict__:
             self.media.reconfigure(config.section("media"))
+        if "windows" in self.__dict__:
+            self.windows.reconfigure(config.section("windows"))
 
     @cached_property
     def display(self):
@@ -120,6 +122,20 @@ class Services:
         from .platform import backdrop
 
         return backdrop.create(live=bool(self.config.get("glass.live", True)))
+
+    @cached_property
+    def windows(self):
+        """Open windows grouped by app (the Apps card, window switching). X11 only."""
+        from .platform.window.tasklist import Tasklist
+
+        return Tasklist(self.bus, self.config.section("windows"))
+
+    @cached_property
+    def taskbar(self):
+        """The desktop's own taskbar, for [experimental] hide_taskbar."""
+        from .platform.desktop.taskbar import Taskbar
+
+        return Taskbar()
 
     @cached_property
     def clipboard(self):

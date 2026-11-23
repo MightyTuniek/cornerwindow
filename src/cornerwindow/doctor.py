@@ -158,6 +158,15 @@ def run() -> int:
             _line(BAD, "gtk-layer-shell missing", "install gir1.2-gtklayershell-0.1")
             problems += 1
 
+    print("\nTaskbar (experimental)")
+    from .platform.desktop.taskbar import Taskbar
+
+    status = Taskbar().describe()
+    found = not status.startswith("no ")
+    _line(OK if found else WARN, status,
+          ("hide_taskbar = " + str(bool(cfg.get("experimental.hide_taskbar", False))).lower()) if found
+          else "[experimental] hide_taskbar has nothing to hide here")
+
     print("\nLiquid Glass")
     from . import native
     from .platform import backdrop

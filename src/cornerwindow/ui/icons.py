@@ -86,6 +86,10 @@ FALLBACKS = {
     "apps": ("view-app-grid-symbolic", "view-grid-symbolic"),
     "lock-closed": ("channel-secure-symbolic", "changes-prevent-symbolic"),
     "signal": ("network-wireless-signal-good-symbolic", "network-wireless-symbolic"),
+    "add": ("list-add-symbolic", "tab-new-symbolic"),
+    "close": ("window-close-symbolic", "edit-delete-symbolic"),
+    "desktop": ("user-desktop-symbolic", "preferences-desktop-wallpaper-symbolic"),
+    "experimental": ("applications-science-symbolic", "flag-symbolic", "emblem-important-symbolic"),
 }
 
 DRAWN = {"sun", "contrast", "caffeine-cup", "glass"}

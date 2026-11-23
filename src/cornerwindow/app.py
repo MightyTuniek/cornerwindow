@@ -7,6 +7,8 @@ running process over D-Bus instead of starting a second copy.
 from __future__ import annotations
 
 import json
+import signal
+import threading
 from pathlib import Path
 
 from gi.repository import Gdk, Gio, GLib, Gtk
@@ -38,6 +40,7 @@ usage: cornerwindow [command]
   actions                  list named actions
   settings [PAGE]          open the settings window (e.g. `settings display`)
   reload                   re-read the config files
+  taskbar show|hide|status the desktop's taskbar (experimental; `show` also works when not running)
   quit                     stop the running instance
   doctor                   diagnose this machine (no GUI needed)
 """
@@ -89,6 +92,10 @@ class CornerWindowApp(Gtk.Application):
         self.actions.register("settings.page", lambda page="general": self.open_settings(page),
                               "Open settings at a page")
         self.actions.register("theme.glass", self.set_glass, "Liquid Glass theme on / off")
+        self.actions.register("taskbar.toggle", self.set_hide_taskbar,
+                              "Hide / show the desktop's taskbar (experimental)")
+        self._taskbar_lock = threading.Lock()
+        self._sync_taskbar()
         self._layout()
         self._apply_theme()
         if self.services.dark_mode.available():
@@ -104,7 +111,48 @@ class CornerWindowApp(Gtk.Application):
         island._frame()
         backend.watch_fullscreen(island, island.set_fullscreen_hidden)
         self._watch_files()
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            # logging out sends SIGTERM: quit properly, so do_shutdown restores the taskbar
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, lambda *_a: self.quit() or False)
         self.hold()
+
+    def do_shutdown(self) -> None:
+        if getattr(self, "services", None) is not None:
+            with self._taskbar_lock:
+                if self.services.taskbar.is_hidden():
+                    self.services.taskbar.show()  # without CornerWindow there's no other way to switch apps
+        Gtk.Application.do_shutdown(self)
+
+    # -- the desktop's taskbar (experimental) ---------------------------------------------
+    def _sync_taskbar(self, notify: bool = False) -> None:
+        """Hide or restore the taskbar to match [experimental] hide_taskbar (off the main thread:
+        probing asks GNOME Shell over D-Bus)."""
+        want = bool(self.config.get("experimental.hide_taskbar", False))
+        taskbar = self.services.taskbar
+
+        def apply():
+            with self._taskbar_lock:
+                if want:
+                    return taskbar.hide() or False
+                return taskbar.show()
+
+        def done(result) -> None:
+            if want and result is False and notify:
+                _notify("No taskbar to hide", "CornerWindow can hide Zorin Taskbar, Dash to Panel, "
+                        "Dash to Dock and Ubuntu Dock.")
+
+        from .core import tasks
+
+        tasks.run_async(apply, done)
+
+    def set_hide_taskbar(self, on: bool | None = None, **_kw) -> str:
+        """Action `taskbar.toggle`: flip [experimental] hide_taskbar (toggles without `on`)."""
+        if on is None:
+            on = not bool(self.config.get("experimental.hide_taskbar", False))
+        base = self.config.base.get("experimental", {}).get("hide_taskbar")
+        self.writer.set("experimental", "hide_taskbar", bool(on), base)
+        self.schedule_reload(delay=10)
+        return f"Taskbar {'hidden' if on else 'shown'}"
 
     def _layout(self) -> None:
         """Fill the island's grid from [modules] (on startup and after every config change)."""
@@ -205,7 +253,11 @@ class CornerWindowApp(Gtk.Application):
             _log.exception("Config reload failed; keeping the old one")
             return False
         theme_only = _without_theme(fresh.data) == _without_theme(self.config.data)
+        taskbar_changed = fresh.get("experimental.hide_taskbar", False) != \
+            self.config.get("experimental.hide_taskbar", False)
         self.config = fresh
+        if taskbar_changed:
+            self._sync_taskbar(notify=True)
         self.services.reconfigure(fresh)
         if theme_only:
             # Switching black <-> glass (or tuning the glass) only repaints: rebuilding
@@ -339,6 +391,10 @@ class CornerWindowApp(Gtk.Application):
             return "", 0
         if cmd == "actions":
             return "\n".join(self.actions.names()), 0
+        if cmd == "taskbar":
+            from .platform.desktop.taskbar import command as taskbar_command
+
+            return taskbar_command(self.services.taskbar, args[1:], self._taskbar_lock)
         if cmd == "action" and len(args) > 1:
             result = self.actions.run(args[1])
             return (str(result) if result else ""), 0
@@ -375,6 +431,19 @@ class CornerWindowApp(Gtk.Application):
             result = audio.step("sink", float(value), "cli") if delta else audio.set_volume("sink", float(value) / 100, "cli")
             return str(round(result * 100)), 0
         return f"unknown setting {what!r}", 2
+
+
+def _notify(title: str, body: str) -> None:
+    from .core import tasks
+    from .platform import dbus
+
+    def send() -> None:
+        dbus.call(dbus.session(), "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                  "org.freedesktop.Notifications", "Notify",
+                  GLib.Variant("(susssasa{sv}i)", ("CornerWindow", 0, "dialog-information-symbolic", title, body,
+                                                   [], {}, -1)), "(u)")
+
+    tasks.run_async(send)
 
 
 def _hash_of(path: str) -> str:

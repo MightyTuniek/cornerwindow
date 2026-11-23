@@ -139,6 +139,14 @@ window.cw-window {
 .cw-root button.cw-row:hover { background-color: rgba(255, 255, 255, 0.09); }
 .cw-root button.cw-row.active { background-color: rgba(10, 132, 255, 0.32); }
 
+/* ── apps (the taskbar in the panel) ───────────────── */
+.cw-apps flowboxchild { padding: 0; background-color: transparent; }
+.cw-root button.cw-app { padding: 6px 4px 3px 4px; border-radius: 12px; background-color: transparent; }
+.cw-root button.cw-app:hover { background-color: rgba(255, 255, 255, 0.1); }
+.cw-root button.cw-app:active { background-color: rgba(255, 255, 255, 0.16); }
+.cw-root button.cw-app.active { background-color: rgba(255, 255, 255, 0.13); }
+.cw-app-idle { opacity: 0.85; }
+
 /* ── media ─────────────────────────────────────────── */
 .cw-art { border-radius: 10px; }
 .cw-track { font-size: 13px; font-weight: 600; }
@@ -283,6 +291,8 @@ window.cw-window {
 .cw-light scrollbar slider { background-color: rgba(0, 0, 0, 0.25); }
 .cw-light button.cw-row:hover { background-color: rgba(0, 0, 0, 0.06); }
 .cw-light button.cw-row.active { background-color: rgba(0, 122, 255, 0.22); }
+.cw-light button.cw-app:hover { background-color: rgba(0, 0, 0, 0.06); }
+.cw-light button.cw-app.active { background-color: rgba(255, 255, 255, 0.6); }
 
 .cw-light .cw-layout-zone { background-color: rgba(0, 0, 0, 0.04); }
 .cw-light .cw-layout-zone.cw-drop { background-color: rgba(0, 122, 255, 0.16); }
