@@ -50,6 +50,15 @@ class ModuleHost:
     def __init__(self, make_context) -> None:
         self._make_context = make_context
         self.instances: dict[str, Module] = {}
+        self.built: set[str] = set()  # ids built into the current grid (hidden cards are not)
+
+    def begin_layout(self) -> None:
+        """A new grid is about to be filled: forget which modules the old one showed."""
+        for module_id in list(self.built):
+            instance = self.instances.get(module_id)
+            if instance is not None:
+                instance.ctx._stop_timers()
+        self.built.clear()
 
     def get(self, module_id: str) -> Module | None:
         if module_id in self.instances:
@@ -78,7 +87,10 @@ class ModuleHost:
             if not instance.available():
                 _log.info("Module %s not available here, hiding it", module_id)
                 return None
-            return instance.build()
+            widget = instance.build()
+            if widget is not None:
+                self.built.add(module_id)
+            return widget
         except Exception:
             _log.exception("Module %s failed to build", module_id)
             return None
@@ -103,11 +115,29 @@ class ModuleHost:
         from pathlib import Path
 
         builtin = {p.stem for p in Path(__file__).parent.glob("*.py")
-                   if p.stem not in ("__init__", "base", "registry")}
+                   if p.stem not in ("__init__", "base", "registry", "layout")}
         return sorted(builtin | set(registered()))
 
+    def shown(self) -> list[Module]:
+        return [i for mid, i in self.instances.items() if mid in self.built]
+
+    def catalog(self) -> dict[str, dict]:
+        """id -> title, icon, area, description for every module that could be placed."""
+        out = {}
+        for module_id in self.known_ids():
+            try:
+                load_builtin(module_id)
+            except Exception:
+                _log.exception("Module %s failed to import", module_id)
+            cls = registered().get(module_id)
+            if cls is None:
+                continue
+            out[module_id] = {"title": cls.title, "icon": cls.icon, "area": cls.area,
+                              "description": cls.description}
+        return out
+
     def opened(self) -> None:
-        for instance in self.instances.values():
+        for instance in self.shown():
             try:
                 instance.on_open()
             except Exception:
@@ -115,7 +145,7 @@ class ModuleHost:
             instance.ctx._start_timers()
 
     def closed(self) -> None:
-        for instance in self.instances.values():
+        for instance in self.shown():
             instance.ctx._stop_timers()
             try:
                 instance.on_close()
@@ -124,7 +154,7 @@ class ModuleHost:
 
     def commands(self) -> list[Command]:
         out: list[Command] = []
-        for instance in self.instances.values():
+        for instance in self.shown():
             try:
                 out.extend(instance.commands())
             except Exception:

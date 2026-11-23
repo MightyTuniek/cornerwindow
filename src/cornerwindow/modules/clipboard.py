@@ -9,7 +9,7 @@ from ..ui.widgets import IconButton, label
 from .base import Module, module
 
 
-@module("clipboard", title="Clipboard", area="drawer", icon="copy")
+@module("clipboard", title="Clipboard", area="drawer", icon="copy", description="Recent clipboard text, click to copy again")
 class Clipboard(Module):
     def setup(self) -> None:
         self.history = self.ctx.services.clipboard

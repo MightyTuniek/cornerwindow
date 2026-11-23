@@ -64,11 +64,16 @@ slow_motion = 1.0             # >1 slows every animation down (great for tuning)
 top = ["commandbar"]
 # Columns left -> right, cards top -> bottom. Any module id works anywhere.
 columns = [
-  ["display", "audio", "media", "glance"],
-  ["header", "toggles", "drawer", "power"],
+  ["display", "audio", "media", "drives", "glance"],
+  ["header", "toggles", "battery", "drawer", "power"],
 ]
-drawer = ["timer", "clipboard", "notes"]
+drawer = ["timer", "stopwatch", "clipboard", "notes"]
+hidden = []                   # switched off: they keep their place above but aren't shown
 search_paths = []             # extra folders with your own module .py files
+
+[commandbar]
+apps = true                   # typing an app's name offers to open it
+search_url = "https://duckduckgo.com/?q={}"   # last row: search the web ({} = what you typed; "" = off)
 
 [display]
 backend = "auto"              # auto | ddc | ddcutil | backlight | gamma   (or a list, in order)
@@ -106,10 +111,24 @@ backend = "auto"              # auto | wpctl | pactl
 step = 5
 max_volume = 100              # allow boosting by raising this (e.g. 150)
 show_mic_muted = true         # red dot on the trigger while the mic is muted
-names = {}                    # device name substring -> friendly name
+names = {}                    # output device name substring -> friendly name
+input_names = {}              # the same for microphones, e.g. { "Camera" = "Webcam mic" }
+mixer_ignore = ["speech-dispatcher"]  # apps left out of the per-app sliders
+
+[media]
+# Any MPRIS player works: Spotify, VLC, mpv, Cider (Apple Music), KDE Connect, and browser
+# tabs (YouTube, SoundCloud, Apple Music web, YouTube Music, Twitch...). MPD is spoken natively.
+ignore = ["playerctld"]       # players to leave out (part of their name, e.g. "kdeconnect")
+prefer = []                   # when nothing plays, show these first, e.g. ["spotify"]
+mpd = "auto"                  # auto (use MPD if it answers) | false
+# mpd_host = "localhost"      # default: $MPD_HOST, else localhost (a socket path works too)
+# mpd_port = 6600
+trigger_dot = true            # small green dot on the corner while something plays
 
 [toggles]
-items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine", "glass"]
+# Toggles hide themselves when their service is missing (power_profile needs power-profiles-daemon,
+# vpn a NetworkManager VPN or WireGuard connection). Also available: mic.
+items = ["wifi", "bluetooth", "night_light", "dark_mode", "dnd", "caffeine", "power_profile", "vpn", "airplane", "glass"]
 per_row = 4
 
 [glance]
@@ -118,9 +137,15 @@ cpu_sensor = "auto"           # or "chip/label", e.g. "k10temp/Tctl" (see `corne
 gpu_sensor = "auto"
 disk_path = "/"
 
+[battery]
+# Shown only when UPower reports a battery: a laptop's, or a wireless mouse, headset, controller...
+low = 15                      # red dot on the corner below this % while discharging
+peripherals = true            # also list mice, keyboards, headsets, controllers, phones
+
 [header]
 clock_format = "%H:%M"
 date_format = "%A, %-d %B"
+week_start = "monday"         # first day of the week in the calendar (click the date to open it)
 
 [drawer]
 height = 150
@@ -138,9 +163,11 @@ hold_ms = 600                 # hold this long to confirm
 lock_hold_ms = 250
 
 [weather]
-# Add "weather" to a column above, then set your location:
+# Switch the Weather card on under Settings → Features, then pick your city under Settings → Weather
+# (or set these yourself):
 # latitude = 52.23
 # longitude = 21.01
 # place = "Home"
 units = "metric"
+forecast = "hours"            # hours | days | both | none
 refresh_minutes = 15

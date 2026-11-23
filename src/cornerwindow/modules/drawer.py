@@ -9,7 +9,7 @@ from ..ui.widgets.card import set_active
 from .base import Module, module
 
 
-@module("drawer", title="Drawer")
+@module("drawer", title="Drawer", icon="drawer", description="Tabs for the drawer cards")
 class Drawer(Module):
     def build(self):
         ids = self.ctx.config.get("modules.drawer", ["timer", "clipboard", "notes"])
@@ -23,7 +23,10 @@ class Drawer(Module):
         self.stack.set_vhomogeneous(True)
         self.stack.set_size_request(-1, int(self.config.get("height", 150)))
         self.buttons: dict[str, Gtk.Button] = {}
+        hidden = set(self.ctx.config.get("modules.hidden", []) or [])
         for mid in ids:
+            if mid in hidden:
+                continue
             widget = self.ctx.host.build(mid)
             if widget is None:
                 continue

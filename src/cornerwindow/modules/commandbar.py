@@ -1,26 +1,79 @@
-"""Start typing anywhere in the open island: commands from every module + a calculator."""
+"""Start typing anywhere in the open island: commands from every module, installed apps,
+a calculator, unit conversion ("5 km to mi") and a web search as the last resort."""
 
 from __future__ import annotations
 
-from gi.repository import Gdk, GLib, Gtk, Pango
+import urllib.parse
+from dataclasses import dataclass
+from typing import Any, Callable
 
-from ..core import calc
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+
+from ..core import calc, tasks
+from ..core.launcher import AppEntry, rank_apps
 from ..ui.widgets import label
-from ..ui.widgets.card import set_active
+from ..ui.widgets.card import resolve_icon, set_active
 from .base import Command, Module, module
 
-MAX_RESULTS = 5
+MAX_RESULTS = 6
 
 
-@module("commandbar", title="Command bar", icon="search")
+@dataclass
+class Result:
+    title: str
+    detail: str
+    run: Callable[[], str | None]
+    icon: Any = None  # a Gio.Icon, or an icon name
+    closes: bool = False  # launching an app or a page closes the island
+
+
+class AppIndex:
+    """Installed apps (.desktop files), loaded off the main thread, refreshed when they change."""
+
+    def __init__(self) -> None:
+        self.entries: list[AppEntry] = []
+        self._loading = False
+        self._stale = True
+        try:
+            self._monitor = Gio.AppInfoMonitor.get()
+            self._monitor.connect("changed", lambda *_: setattr(self, "_stale", True))
+        except Exception:
+            self._monitor = None
+
+    def ensure(self) -> None:
+        if not self._stale or self._loading:
+            return
+        self._loading = True
+
+        def load() -> list[AppEntry]:
+            out = []
+            for info in Gio.AppInfo.get_all():
+                if not info.should_show():
+                    continue
+                keywords = []
+                if isinstance(info, Gio.DesktopAppInfo):
+                    keywords += list(info.get_keywords() or [])
+                    keywords.append(info.get_generic_name() or "")
+                keywords.append((info.get_executable() or "").rsplit("/", 1)[-1])
+                out.append(AppEntry(info.get_display_name() or info.get_name() or "", keywords, info))
+            return out
+
+        def done(entries: list[AppEntry]) -> None:
+            self.entries, self._loading, self._stale = entries, False, False
+
+        tasks.run_async(load, done, error=lambda _e: setattr(self, "_loading", False))
+
+
+@module("commandbar", title="Command bar", icon="search", description="Type to run commands, launch apps, calculate and convert")
 class CommandBar(Module):
     def setup(self) -> None:
         self.ctx.island.on_type = self.activate
         self.ctx.island.on_close_hooks.append(self.reset)
         self.ctx.island.on_escape.append(self._escape)
-        self._matches: list[tuple[Command, str]] = []
+        self._matches: list[Result] = []
         self._selected = 0
         self._feedback_id = 0
+        self._apps = AppIndex()
 
     def build(self):
         self.revealer = Gtk.Revealer()
@@ -34,7 +87,7 @@ class CommandBar(Module):
         else:
             box.set_margin_start(30)
         self.entry = Gtk.Entry()
-        self.entry.set_placeholder_text("Type a command or a sum…  (b 40, v 20, timer 5, 2*21)")
+        self.entry.set_placeholder_text("Type an app, a command or a sum…  (b 40, timer 5, 5 km to mi)")
         self.entry.connect("changed", self._changed)
         self.entry.connect("activate", self._run_selected)
         self.entry.connect("key-press-event", self._key)
@@ -53,6 +106,8 @@ class CommandBar(Module):
         if not hasattr(self, "entry"):
             return False
         self.revealer.set_reveal_child(True)
+        if self.config.get("apps", True):
+            self._apps.ensure()
         self.entry.grab_focus()
         self.entry.set_text(first_char)
         self.entry.set_position(-1)
@@ -80,36 +135,63 @@ class CommandBar(Module):
         if not text.strip():
             self._render()
             return
-        if calc.looks_like_math(text):
+        answered = False
+        conversion = calc.convert(text)
+        if conversion is not None:
+            self.answer.set_text(f"= {calc.format_conversion(conversion)}")
+            self.answer.show()
+            answered = True
+        elif calc.looks_like_math(text):
             try:
                 result = calc.evaluate(text)
                 self.answer.set_text(f"= {calc.format_number(result)}")
                 self.answer.show()
+                answered = True
             except (ValueError, SyntaxError, ZeroDivisionError, TypeError, OverflowError):
                 pass
         word, _, arg = text.strip().partition(" ")
+        found = []
         for command in self.ctx.host.commands():
             if command.matches(word):
                 exact = word.lower() in command.keywords
-                self._matches.append((command, arg, exact))
-        self._matches.sort(key=lambda m: (not m[2], len(m[0].keywords[0])))
-        self._matches = [(c, a) for c, a, _e in self._matches[:MAX_RESULTS]]
+                found.append((command, arg, exact))
+        found.sort(key=lambda m: (not m[2], len(m[0].keywords[0])))
+        any_exact = any(e for _c, _a, e in found)
+        results = [Result(c.title + (f"  {a}" if a and c.takes_arg else ""), c.usage,
+                          lambda c=c, a=a: c.run(a)) for c, a, _e in found[:MAX_RESULTS]]
+        query = text.strip()
+        if self.config.get("apps", True) and len(query) >= 2 and not answered:
+            room = max(MAX_RESULTS - len(results), 2 if not any_exact else 0)
+            for app in rank_apps(query, self._apps.entries, room):
+                results.append(Result(app.name, "App", lambda a=app: self._launch(a), app.ref.get_icon(), True))
+        search = str(self.config.get("search_url", "https://duckduckgo.com/?q={}") or "")
+        if search and len(query) >= 2 and not answered and not any_exact:
+            results.append(Result(f"Search the web for “{query}”", "Web",
+                                  lambda q=query, u=search: self._web(u, q), "web", True))
+        self._matches = results
         self._render()
 
     def _render(self) -> None:
         for child in self.results.get_children():
             self.results.remove(child)
-        for index, (command, arg) in enumerate(self._matches):
+        for index, result in enumerate(self._matches):
             button = Gtk.Button()
             button.set_relief(Gtk.ReliefStyle.NONE)
             button.set_can_focus(False)
             button.get_style_context().add_class("cw-row")
             row = Gtk.Box(spacing=8)
-            title = Gtk.Label(label=command.title + (f"  {arg}" if arg and command.takes_arg else ""))
+            if result.icon is not None:
+                if isinstance(result.icon, str):
+                    image = Gtk.Image.new_from_icon_name(resolve_icon(result.icon), Gtk.IconSize.MENU)
+                else:
+                    image = Gtk.Image.new_from_gicon(result.icon, Gtk.IconSize.MENU)
+                image.set_pixel_size(16)
+                row.pack_start(image, False, False, 0)
+            title = Gtk.Label(label=result.title)
             title.set_xalign(0)
             title.set_ellipsize(Pango.EllipsizeMode.END)
             row.pack_start(title, True, True, 0)
-            row.pack_end(label(command.usage, "cw-dim cw-small", xalign=1.0), False, False, 0)
+            row.pack_end(label(result.detail, "cw-dim cw-small", xalign=1.0), False, False, 0)
             button.add(row)
             button.connect("clicked", lambda _b, i=index: self._run(i))
             set_active(button, index == self._selected)
@@ -140,15 +222,38 @@ class CommandBar(Module):
             self._feedback(f"Copied {value}")
 
     def _run(self, index: int) -> None:
-        command, arg = self._matches[index]
+        result = self._matches[index]
         try:
-            feedback = command.run(arg)
+            feedback = result.run()
         except Exception as exc:
             feedback = f"Failed: {exc}"
+        if result.closes:
+            self.reset()
+            self.ctx.island.close()
+            return
         if not self.ctx.island.is_open:
             return
         self.entry.set_text("")
-        self._feedback(feedback or command.title)
+        self._feedback(feedback or result.title)
+
+    def _launch(self, app: AppEntry) -> str:
+        display = Gdk.Display.get_default()
+        context = display.get_app_launch_context() if display else None
+        app.ref.launch([], context)
+        return f"Opening {app.name}"
+
+    def _web(self, template: str, query: str) -> str:
+        from ..platform.desktop import open_uri
+
+        quoted = urllib.parse.quote_plus(query)
+        open_uri(template.replace("{}", quoted) if "{}" in template else template + quoted)
+        return "Searching…"
+
+    def commands(self) -> list[Command]:
+        def settings(_a: str) -> None:
+            self.ctx.actions.run("settings.toggle")
+
+        return [Command(("settings", "preferences"), "Open settings", "settings", settings)]
 
     def _feedback(self, text: str) -> None:
         self.answer.set_text(text)

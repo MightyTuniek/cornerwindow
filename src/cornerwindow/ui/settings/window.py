@@ -157,6 +157,8 @@ class SettingsWindow(Gtk.Window):
         return {
             "actions": self.app.actions.names(),
             "modules": self.app.host.known_ids(),
+            "catalog": self.app.host.catalog,
+            "choices": _switchlist_choices,
             "sensors": [f"{s.chip}/{s.label}" for s in sensors.temperature_sensors()],
             "limits": self.app.config.get("display.limits", {}) or {},
             "background": lambda: self.app.island.bg,
@@ -180,10 +182,17 @@ class SettingsWindow(Gtk.Window):
             box.pack_start(label("Nothing to set here yet.", "cw-dim"), False, False, 0)
         return box
 
+    def _value(self, sid: str, field: Field) -> Any:
+        if field.keys:
+            return {key: self.app.config.get(f"{sid}.{key}") for key in field.keys}
+        return self.app.config.get(f"{sid}.{field.key}")
+
     def _row(self, sid: str, field: Field, ctx: dict) -> Gtk.Widget:
-        value = self.app.config.get(f"{sid}.{field.key}")
+        value = self._value(sid, field)
+        ctx = dict(ctx, section=sid, key=field.key)
         row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        wide = field.kind in ("columns", "presets", "dict", "toml", "list", "modules", "limits")
+        wide = field.kind in ("columns", "presets", "dict", "toml", "list", "modules", "limits", "layout",
+                              "switchlist", "place_search")
         line = Gtk.Box(spacing=8)
         title = label(field.label, "cw-setting-label")
         title.set_ellipsize(Pango.EllipsizeMode.END)
@@ -255,19 +264,27 @@ class SettingsWindow(Gtk.Window):
         if value is None:
             self._reset(sid, field)
             return
-        base = self.app.config.base.get(sid, {}).get(field.key)
+        base = self.app.config.base.get(sid, {})
         try:
-            self.app.writer.set(sid, field.key, value, base)
+            if field.keys:
+                values = {k: v for k, v in value.items() if k in field.keys}
+                self.app.writer.set_many(sid, values, {k: base.get(k) for k in values})
+            else:
+                self.app.writer.set(sid, field.key, value, base.get(field.key))
         except Exception as exc:  # bad value or unwritable file: say so, keep running
             _log.warning("Could not save %s.%s: %s", sid, field.key, exc)
             self.flash(f"Not saved: {exc}")
             return
         self.flash(f"Saved {field.label.lower()}" + (" (restart to apply)" if field.restart else ""))
-        self.app.schedule_reload()
+        others = [k for k in field.keys if k != field.key]  # rows of their own on this page
+        if others:
+            self.app.schedule_reload(then=lambda: [self._refresh_row(sid, k) for k in others])
+        else:
+            self.app.schedule_reload()
 
     def _reset(self, sid: str, field: Field) -> None:
         try:
-            self.app.writer.reset(sid, field.key)
+            self.app.writer.reset(sid, *(field.keys or (field.key,)))
         except Exception as exc:
             self.flash(f"Not saved: {exc}")
             return
@@ -310,14 +327,16 @@ class SettingsWindow(Gtk.Window):
     def _refresh_row(self, sid: str, key: str) -> None:
         row = self.rows.get((sid, key))
         if row:
-            row["editor"].set(self.app.config.get(f"{sid}.{key}"))
+            row["editor"].set(self._value(sid, row["field"]))
             self._update_badge(sid, key)
 
     def _update_badge(self, sid: str, key: str) -> None:
         row = self.rows.get((sid, key))
         if not row:
             return
-        origin = self.app.config.origin(sid, key)
+        keys = row["field"].keys or (key,)
+        origins = [self.app.config.origin(sid, k) for k in keys]
+        origin = next((o for o in ("yours", "machine") if o in origins), origins[0])
         text = {"yours": "changed", "machine": "this PC"}.get(origin, "")
         row["badge"].set_text(text)
         ctx = row["badge"].get_style_context()
@@ -541,6 +560,19 @@ class SettingsWindow(Gtk.Window):
         cr.set_line_width(1)
         cr.stroke()
         return False
+
+
+def _switchlist_choices(section: str, key: str) -> list[tuple[str, str, str]]:
+    """(id, title, description) for every item a switch list can hold."""
+    if section == "toggles":
+        from ...modules.toggles import _TOGGLES
+
+        return [(tid, cls.title, getattr(cls, "description", "")) for tid, cls in _TOGGLES.items()]
+    if section == "power":
+        from ...modules.power import ACTIONS
+
+        return [(pid, title, "") for pid, (_icon, title, _fn, _color) in ACTIONS.items()]
+    return []
 
 
 def _wrap(widget: Gtk.Label) -> Gtk.Label:

@@ -27,6 +27,8 @@ class Services:
         if "audio" in self.__dict__:
             self.audio.config = config.section("audio")
             self.audio.max_volume = float(config.section("audio").get("max_volume", 100)) / 100.0
+        if "media" in self.__dict__:
+            self.media.reconfigure(config.section("media"))
 
     @cached_property
     def display(self):
@@ -50,9 +52,9 @@ class Services:
 
     @cached_property
     def media(self):
-        from .platform.media.mpris import MediaService
+        from .platform.media.service import MediaService
 
-        service = MediaService(self.bus)
+        service = MediaService(self.bus, self.config.section("media"))
         service.start()
         return service
 
@@ -67,6 +69,24 @@ class Services:
         from .platform.network import Bluetooth
 
         return Bluetooth()
+
+    @cached_property
+    def vpn(self):
+        from .platform.network import Vpn
+
+        return Vpn()
+
+    @cached_property
+    def airplane(self):
+        from .platform.network import Airplane
+
+        return Airplane()
+
+    @cached_property
+    def power_profiles(self):
+        from .platform.power import PowerProfiles
+
+        return PowerProfiles()
 
     @cached_property
     def dark_mode(self):
@@ -85,6 +105,14 @@ class Services:
         from .platform.power import Caffeine
 
         return Caffeine()
+
+    @cached_property
+    def battery(self):
+        from .platform.power.upower import Batteries
+
+        service = Batteries(self.bus)
+        service.start()
+        return service
 
     @cached_property
     def backdrop(self):

@@ -87,3 +87,67 @@ class Caffeine:
                               "org.freedesktop.ScreenSaver", "UnInhibit", GLib.Variant("(u)", (cookie,)))
             except GLib.Error as exc:
                 _log.warning("Uninhibit failed: %s", exc)
+
+
+PROFILES_BUS = (("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles",
+                 "org.freedesktop.UPower.PowerProfiles"),
+                ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "net.hadess.PowerProfiles"))
+PROFILE_NAMES = {"power-saver": "Saver", "balanced": "Balanced", "performance": "Performance"}
+
+
+class PowerProfiles:
+    """power-profiles-daemon (or tuned-ppd): balanced / performance / power-saver."""
+
+    def __init__(self) -> None:
+        self._where: tuple[str, str, str] | None = None
+
+    def _find(self) -> tuple[str, str, str] | None:
+        if self._where is None:
+            for where in PROFILES_BUS:
+                try:
+                    dbus.get_property(dbus.system(), *where, "ActiveProfile")
+                except GLib.Error:
+                    continue
+                self._where = where
+                break
+        return self._where
+
+    def available(self) -> bool:
+        return self._find() is not None
+
+    def profiles(self) -> list[str]:
+        where = self._find()
+        if where is None:
+            return []
+        try:
+            items = dbus.get_property(dbus.system(), *where, "Profiles") or []
+        except GLib.Error:
+            return []
+        found = [str(i.get("Profile")) for i in items if i.get("Profile")]
+        order = list(PROFILE_NAMES)
+        return sorted(found, key=lambda p: order.index(p) if p in order else 99)
+
+    def active(self) -> str:
+        where = self._find()
+        if where is None:
+            return ""
+        try:
+            return str(dbus.get_property(dbus.system(), *where, "ActiveProfile") or "")
+        except GLib.Error:
+            return ""
+
+    def set(self, profile: str) -> None:
+        where = self._find()
+        if where is not None:
+            dbus.set_property(dbus.system(), *where, "ActiveProfile", GLib.Variant("s", profile))
+
+    def cycle(self) -> str:
+        """balanced -> performance -> power-saver -> balanced (only the ones offered)."""
+        offered = self.profiles()
+        ring = [p for p in ("balanced", "performance", "power-saver") if p in offered] or offered
+        if not ring:
+            return ""
+        current = self.active()
+        following = ring[(ring.index(current) + 1) % len(ring)] if current in ring else ring[0]
+        self.set(following)
+        return following

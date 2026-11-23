@@ -15,7 +15,7 @@ from .base import Command, Module, module
 SAVE_HOLD = 0.6
 
 
-@module("display", title="Display", icon="brightness")
+@module("display", title="Display", icon="brightness", description="Brightness and contrast, presets, night light")
 class Display(Module):
     def setup(self) -> None:
         self.svc = self.ctx.services.display
@@ -28,6 +28,8 @@ class Display(Module):
                                   lambda delta=1: self.nudge(CONTRAST, delta), "Contrast up/down")
         self.ctx.actions.register("display.nightlight.toggle", self.toggle_night, "Toggle night light")
         self.ctx.bus.subscribe("display.changed", self._changed)
+        self.ctx.bus.subscribe("display.monitor_changed", self._monitor_changed)
+        self.monitor_sliders: dict[str, PillSlider] = {}
         self.ctx.bus.subscribe("display.ready", self._ready)
         if self.night.available:
             self.night.connect(self._night_changed)
@@ -96,11 +98,19 @@ class Display(Module):
 
     # -- UI -------------------------------------------------------------------------------
     def build(self):
-        self.sliders, self.preset_chips = {}, {}
+        self.sliders, self.preset_chips, self.monitor_sliders = {}, {}, {}
         card = Card("Display")
+        status_row = Gtk.Box(spacing=6)
         self.status = label("Looking for monitors…", "cw-dim cw-small")
         self.status.set_line_wrap(True)
-        card.pack_start(self.status, False, False, 0)
+        status_row.pack_start(self.status, True, True, 0)
+        self.link_chip = chip("Linked", self.toggle_link, "Move every monitor together, or each on its own")
+        self.link_chip.set_no_show_all(True)
+        self.link_chip.set_valign(Gtk.Align.CENTER)
+        status_row.pack_end(self.link_chip, False, False, 0)
+        card.pack_start(status_row, False, False, 0)
+        self.per_monitor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.per_monitor.set_no_show_all(True)
 
         for control, icon in ((BRIGHTNESS, "sun"), (CONTRAST, "contrast")):
             # The slider spans 0..limit, so the whole track is the safe range.
@@ -111,6 +121,8 @@ class Display(Module):
             slider.set_no_show_all(True)
             self.sliders[control] = slider
             card.pack_start(slider, False, False, 0)
+            if control == BRIGHTNESS:
+                card.pack_start(self.per_monitor, False, False, 0)
 
         row = Gtk.FlowBox()
         row.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -170,13 +182,57 @@ class Display(Module):
         if final:
             self._mark_presets()
 
+    # -- one slider per monitor -----------------------------------------------------------
+    def linked(self) -> bool:
+        return bool(self.ctx.state.get("display.linked", True))
+
+    def toggle_link(self) -> str:
+        self.ctx.state.set("display.linked", not self.linked())
+        self._ready()
+        return "Monitors move together" if self.linked() else "Each monitor on its own"
+
+    def _build_monitor_sliders(self) -> None:
+        for child in self.per_monitor.get_children():
+            self.per_monitor.remove(child)
+            child.destroy()
+        self.monitor_sliders = {}
+        limit = self.svc.limit(BRIGHTNESS)
+        for monitor in self.svc.monitors_for(BRIGHTNESS):
+            slider = PillSlider("sun", lambda v, final, m=monitor.id: self._slid_monitor(m, v, final),
+                                step=self.step / limit,
+                                formatter=lambda v, lim=limit, n=monitor.name: f"{n}  {round(v * lim)}")
+            value = self.svc.percent(BRIGHTNESS, monitor.id)
+            if value is not None:
+                slider.set_value(self._frac(BRIGHTNESS, value), animate=False)
+            self.monitor_sliders[monitor.id] = slider
+            self.per_monitor.pack_start(slider, False, False, 0)
+            slider.show()
+
+    def _slid_monitor(self, monitor: str, value: float, final: bool) -> None:
+        self.svc.set_percent(BRIGHTNESS, value * self.svc.limit(BRIGHTNESS), source="slider", monitor=monitor)
+        if final:
+            self._mark_presets()
+
+    def _monitor_changed(self, control: str, monitor: str, percent: float, source: str = "") -> None:
+        slider = self.monitor_sliders.get(monitor)
+        if control == BRIGHTNESS and slider is not None and source != "slider":
+            slider.set_value(self._frac(control, percent))
+
     def _ready(self) -> None:
         if not hasattr(self, "status"):
             return
+        several = len(self.svc.monitors_for(BRIGHTNESS)) > 1
+        split = several and not self.linked()
+        self.link_chip.set_visible(several)
+        self.link_chip.set_label("Linked" if self.linked() else "Separate")
+        set_active(self.link_chip, self.linked())
+        if split:
+            self._build_monitor_sliders()
+        self.per_monitor.set_visible(split)
         any_control = False
         for control, slider in self.sliders.items():
             supported = self.svc.supports(control)
-            slider.set_visible(supported)
+            slider.set_visible(supported and not (split and control == BRIGHTNESS))
             if supported:
                 any_control = True
                 slider.set_value(self._frac(control, self.svc.percent(control)), animate=False)
@@ -224,15 +280,22 @@ class Display(Module):
     def commands(self) -> list[Command]:
         def setter(control: str):
             def run(arg: str) -> str | None:
-                arg = arg.strip().rstrip("%")
+                arg, _, which = arg.strip().partition(" ")
+                arg = arg.rstrip("%")
+                monitor = None
+                if which.strip():  # "b 40 2" or "b 40 dell": just that monitor
+                    found = self.svc.find_monitor(which, control)
+                    if found is None:
+                        return f"No monitor matches {which.strip()!r}"
+                    monitor = found.id
                 if not arg:
-                    value = self.svc.percent(control)
+                    value = self.svc.percent(control, monitor)
                     return f"{control.title()} is {round(value)}%" if value is not None else "Not available"
                 try:
                     if arg[0] in "+-":
-                        value = self.svc.step(control, float(arg), "command")
+                        value = self.svc.step(control, float(arg), "command", monitor)
                     else:
-                        value = self.svc.set_percent(control, float(arg), "command")
+                        value = self.svc.set_percent(control, float(arg), "command", monitor)
                 except ValueError:
                     return f"Usage: {control[0]} 0-100"
                 if value is None:
@@ -243,7 +306,7 @@ class Display(Module):
             return run
 
         cmds = [
-            Command(("b", "brightness"), "Brightness", "b 40 · b +10", setter(BRIGHTNESS), True),
+            Command(("b", "brightness"), "Brightness", "b 40 · b +10 · b 40 2", setter(BRIGHTNESS), True),
             Command(("c", "contrast"), "Contrast", "c 60", setter(CONTRAST), True),
             Command(("night", "nightlight"), "Toggle night light", "night", lambda _a: self.toggle_night()),
         ]

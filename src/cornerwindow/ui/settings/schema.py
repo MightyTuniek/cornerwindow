@@ -8,6 +8,7 @@ Field kinds:
   bool · int · float · choice · text · color · action · list (comma separated)
   optional_int / optional_float (empty = use default/machine value)
   columns (module layout) · modules (one list of module ids) · presets · dict · limits · sensor
+  layout (the Features page) · switchlist (reorderable on/off list) · place_search (city lookup)
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ class Field:
     choices: list[str] = field(default_factory=list)
     item_type: type = str  # for kind="list"
     restart: bool = False  # only takes effect after restarting the app
+    keys: tuple[str, ...] = ()  # edits several keys at once: the editor gets and emits {key: value}
 
 
 @dataclass
@@ -61,6 +63,11 @@ SECTIONS: list[Section] = [
         F("window_type", "Window type (X11)", "choice", "Try “dock” if your window manager misbehaves.",
           choices=["utility", "dock"], restart=True),
     ]),
+    Section("modules", "Features", "settings", [
+        F("columns", "Cards", "layout", "Switch a card off to hide it; it keeps its place. Drag the handle to "
+          "move a card, or right-click it.", keys=("top", "columns", "drawer", "hidden")),
+        F("search_paths", "Extra module folders", "list", "Folders with your own module .py files.", restart=True),
+    ], "Choose what the panel shows, and where."),
     Section("trigger", "Trigger", "pin", [
         F("radius", "Size at rest", "int", min=6, max=60, unit="px"),
         F("hover_radius", "Size on hover", "int", min=6, max=80, unit="px"),
@@ -106,12 +113,10 @@ SECTIONS: list[Section] = [
         F("slow_motion", "Slow motion", "float", "Above 1 slows every animation down, for tuning.",
           min=0.2, max=10, step=0.1, digits=1, unit="×"),
     ]),
-    Section("modules", "Layout", "settings", [
-        F("columns", "Columns", "columns", "Cards per column, left to right, top to bottom."),
-        F("top", "Above the columns", "modules"),
-        F("drawer", "Drawer tabs", "modules"),
-        F("search_paths", "Extra module folders", "list", "Folders with your own module .py files.", restart=True),
-    ]),
+    Section("commandbar", "Command bar", "search", [
+        F("apps", "Find apps", "bool", "Type an app's name and press Enter to open it."),
+        F("search_url", "Web search", "text", "{} is replaced by what you typed. Empty = no web row."),
+    ], "Start typing anywhere in the open panel. Also: sums (2*21) and units (5 km to mi)."),
     Section("display", "Display", "brightness", [
         F("limits", "Maximum", "limits", "Nothing can go above this: sliders, presets, scrolling, commands."),
         F("presets", "Presets", "presets", "Click a preset in the island to apply it; hold it there to save current values."),
@@ -124,11 +129,22 @@ SECTIONS: list[Section] = [
         F("step", "Scroll step", "int", min=1, max=25, unit="%"),
         F("max_volume", "Maximum volume", "int", "Above 100 boosts.", min=10, max=200, step=5, unit="%"),
         F("show_mic_muted", "Red dot when mic is muted", "bool"),
-        F("names", "Device names", "dict", "Part of a device's name → what to call it."),
+        F("names", "Output names", "dict", "Part of a device's name → what to call it."),
+        F("input_names", "Microphone names", "dict", "The same for inputs."),
+        F("mixer_ignore", "Hide from the app sliders", "list", "Part of an app's name."),
         F("backend", "Backend", "choice", choices=["auto", "wpctl", "pactl"], restart=True),
     ]),
+    Section("media", "Now Playing", "music", [
+        F("ignore", "Ignore players", "list", "Part of a player's name, e.g. kdeconnect or chromium."),
+        F("prefer", "Prefer players", "list", "Shown first when nothing is playing, e.g. spotify."),
+        F("trigger_dot", "Dot on the corner while playing", "bool"),
+        F("mpd", "MPD", "choice", "Talk to MPD directly (not needed when mpDris2 runs).",
+          choices=["auto", "false"], restart=True),
+        F("mpd_host", "MPD host", "text", "Empty = $MPD_HOST or localhost.", restart=True),
+        F("mpd_port", "MPD port", "optional_int", max=65535, restart=True),
+    ], "Works with any MPRIS player and browser tabs; with several open, chips switch between them."),
     Section("toggles", "Toggles", "wifi", [
-        F("items", "Toggles", "list", "Shown in this order. Available: wifi, bluetooth, night_light, dark_mode, dnd, caffeine, mic, glass."),
+        F("items", "Toggles", "switchlist", "Drag to reorder; switched-off toggles aren't shown."),
         F("per_row", "Per row", "int", min=2, max=6),
     ]),
     Section("glance", "System", "monitor", [
@@ -137,9 +153,15 @@ SECTIONS: list[Section] = [
         F("gpu_sensor", "GPU temperature", "sensor"),
         F("disk_path", "Disk", "text", "Which mount point to report free space for."),
     ]),
+    Section("battery", "Battery", "battery", [
+        F("low", "Warn below", "int", "A red dot on the corner while discharging.", min=1, max=50, unit="%"),
+        F("peripherals", "Show wireless devices", "bool", "Mice, keyboards, headsets, controllers, phones."),
+    ], "Appears only when there is a battery to show."),
     Section("header", "Clock", "timer", [
         F("clock_format", "Time format", "text", "strftime codes, e.g. %H:%M or %I:%M %p."),
         F("date_format", "Date format", "text", "e.g. %A, %-d %B."),
+        F("week_start", "Week starts on", "choice", "In the calendar (click the date to open it).",
+          choices=["monday", "sunday", "saturday"]),
     ]),
     Section("timer", "Timer", "timer", [
         F("presets", "Quick timers", "list", "Minutes.", item_type=int),
@@ -152,15 +174,16 @@ SECTIONS: list[Section] = [
         F("persist", "Keep after restart", "bool", "Stored in ~/.local/share/cornerwindow."),
     ]),
     Section("power", "Power", "poweroff", [
-        F("items", "Buttons", "list", "Available: lock, suspend, logout, reboot, poweroff."),
+        F("items", "Buttons", "switchlist", "Drag to reorder; switched-off buttons aren't shown."),
         F("hold_ms", "Hold to confirm", "int", min=100, max=3000, step=50, unit="ms"),
         F("lock_hold_ms", "Hold to lock", "int", min=0, max=3000, step=50, unit="ms"),
     ]),
     Section("weather", "Weather", "weather", [
-        F("latitude", "Latitude", "optional_float", "Add “weather” to a column in Layout to show the card.",
-          min=-90, max=90, step=0.01, digits=4),
+        F("place", "City", "place_search", "Looked up on Open-Meteo when you press Find.",
+          keys=("place", "latitude", "longitude")),
+        F("latitude", "Latitude", "optional_float", min=-90, max=90, step=0.01, digits=4),
         F("longitude", "Longitude", "optional_float", min=-180, max=180, step=0.01, digits=4),
-        F("place", "Place name", "text"),
+        F("forecast", "Forecast", "choice", choices=["hours", "days", "both", "none"]),
         F("units", "Units", "choice", choices=["metric", "imperial"]),
         F("refresh_minutes", "Refresh every", "int", min=5, max=240, step=5, unit="min"),
     ]),

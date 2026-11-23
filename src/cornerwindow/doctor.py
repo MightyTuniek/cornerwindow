@@ -86,7 +86,19 @@ def run() -> int:
     from .platform import dbus
 
     players = [n for n in dbus.list_names(dbus.session()) if n.startswith("org.mpris.MediaPlayer2.")]
-    _line(OK, f"{len(players)} media player(s)", ", ".join(p.split(".")[3] for p in players))
+    _line(OK, f"{len(players)} MPRIS player(s)", ", ".join(p.split(".")[3] for p in players))
+    from .platform.media import mpd
+
+    host, port, password = mpd.target()
+    host = str(cfg.get("media.mpd_host") or host)
+    port = int(cfg.get("media.mpd_port") or port)
+    found_mpd = str(cfg.get("media.mpd", "auto")).lower() not in ("false", "off") and mpd.probe(host, port, password)
+    _line(OK if found_mpd else WARN, "MPD", f"{host}:{port}" if found_mpd else "not running (optional)")
+    import shutil as _shutil
+
+    _line(OK if _shutil.which("pw-dump") or (audio and audio.name == "pactl") else WARN, "per-app volume",
+          "pw-dump" if _shutil.which("pw-dump") else "pactl" if audio and audio.name == "pactl"
+          else "install pipewire-bin (pw-dump) for the app sliders")
 
     print("\nSensors")
     from .platform import sensors
@@ -104,10 +116,27 @@ def run() -> int:
     from .platform.network import Bluetooth, WiFi
     from .platform.power import Caffeine
 
+    from .platform.network import Airplane, Vpn
+    from .platform.power import PowerProfiles
+
     for name, available in (("Wi-Fi", WiFi.available()), ("Bluetooth", Bluetooth.available()),
                             ("Dark mode", DarkMode().available()), ("Do not disturb", DoNotDisturb().available()),
-                            ("Caffeine", Caffeine().available())):
+                            ("Caffeine", Caffeine().available()), ("Power profiles", PowerProfiles().available()),
+                            ("VPN", Vpn.available()), ("Airplane mode", Airplane.available())):
         _line(OK if available else WARN, name, "" if available else "hidden (not available here)")
+
+    print("\nBattery")
+    from .core.bus import EventBus as _Bus
+    from .platform.power.upower import Batteries
+
+    batteries = Batteries(_Bus())
+    batteries.start()
+    if not batteries.running:
+        _line(WARN, "UPower not running", "the Battery card hides itself")
+    elif not batteries.current():
+        _line(OK, "UPower", "no batteries right now (the card appears when one shows up)")
+    for device in batteries.current():
+        _line(OK, f"{device.model} ({device.kind})", f"{round(device.percent)}% {device.state}")
 
     print("\nWindow")
     try:

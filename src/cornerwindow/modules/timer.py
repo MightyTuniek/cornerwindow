@@ -14,7 +14,7 @@ from .base import Command, Module, module
 SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 
 
-@module("timer", title="Timer", area="drawer", icon="timer")
+@module("timer", title="Timer", area="drawer", icon="timer", description="Countdown timer with a ring on the corner")
 class Timer(Module):
     def setup(self) -> None:
         self.duration = 0.0

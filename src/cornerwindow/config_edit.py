@@ -291,23 +291,30 @@ class UserConfigWriter:
 
     def set(self, section: str, key: str, value: Any, base_value: Any = None) -> None:
         """Write section.key = value, or remove it when it equals the lower layers."""
+        self.set_many(section, {key: value}, {key: base_value})
+
+    def set_many(self, section: str, values: dict[str, Any], base_values: dict[str, Any] | None = None) -> None:
+        """Several keys of one section in a single write (e.g. the whole card layout)."""
+        base_values = base_values or {}
         doc = TomlDocument(self.read_text())
-        same_as_base = _equal(value, base_value)
-        if (section, key) in ARRAY_TABLES:
-            doc.set_array_of_tables(f"{section}.{key}", [] if same_as_base else list(value))
-        elif same_as_base:
-            doc.delete(section, key)
-        else:
-            doc.set(section, key, value)
+        for key, value in values.items():
+            same_as_base = _equal(value, base_values.get(key))
+            if (section, key) in ARRAY_TABLES:
+                doc.set_array_of_tables(f"{section}.{key}", [] if same_as_base else list(value))
+            elif same_as_base:
+                doc.delete(section, key)
+            else:
+                doc.set(section, key, value)
         doc.remove_empty_tables()
         self.write_text(doc.text())
 
-    def reset(self, section: str, key: str) -> None:
+    def reset(self, section: str, *keys: str) -> None:
         doc = TomlDocument(self.read_text())
-        if (section, key) in ARRAY_TABLES:
-            doc.set_array_of_tables(f"{section}.{key}", [])
-        else:
-            doc.delete(section, key)
+        for key in keys:
+            if (section, key) in ARRAY_TABLES:
+                doc.set_array_of_tables(f"{section}.{key}", [])
+            else:
+                doc.delete(section, key)
         doc.remove_empty_tables()
         self.write_text(doc.text())
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .. import proc
-from .base import AudioBackend, Device, Level
+from .base import AudioBackend, Device, Level, Stream, parse_pw_dump
 
 _TARGET = {"sink": "@DEFAULT_AUDIO_SINK@", "source": "@DEFAULT_AUDIO_SOURCE@"}
 _SECTION = {"sink": "Sinks:", "source": "Sources:"}
@@ -66,3 +66,14 @@ class WpctlBackend(AudioBackend):
 
     def set_default(self, kind: str, device_id: str) -> None:
         proc.run(["wpctl", "set-default", device_id], 2)
+
+    def streams(self) -> list[Stream]:
+        if not proc.which("pw-dump"):
+            return []
+        return parse_pw_dump(proc.run(["pw-dump"], 3))
+
+    def set_stream_volume(self, stream_id: str, volume: float) -> None:
+        proc.run(["wpctl", "set-volume", stream_id, f"{max(0.0, volume):.3f}"], 2)
+
+    def set_stream_muted(self, stream_id: str, muted: bool) -> None:
+        proc.run(["wpctl", "set-mute", stream_id, "1" if muted else "0"], 2)

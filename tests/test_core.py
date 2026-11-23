@@ -283,6 +283,26 @@ def test_display_limit_clamps_every_write():
     assert DisplayService({"limits": {"brightness": "junk"}}, EventBus()).limit("brightness") == 100
 
 
+
+def test_display_limit_applies_per_monitor_too():
+    from cornerwindow.core.bus import EventBus
+    from cornerwindow.platform.display.base import Control, Monitor
+    from cornerwindow.platform.display.service import DisplayService
+
+    svc = DisplayService({"limits": {"brightness": 30}}, EventBus())
+    writes = []
+    svc._writer.submit = lambda key, value: writes.append((key, value))
+    svc.monitors = [Monitor("ddc:1", "Left", controls={"brightness": Control("brightness", 10)}),
+                    Monitor("ddc:2", "Right", controls={"brightness": Control("brightness", 20)})]
+    assert svc.set_percent("brightness", 90, monitor="ddc:2") == 30
+    assert svc.step("brightness", +50, monitor="ddc:2") == 30
+    assert svc.percent("brightness", "ddc:2") == 30
+    assert writes[-1] == (("brightness", "ddc:2"), 30)
+    assert svc.set_percent("brightness", 80) == 30  # all of them
+    assert svc.percent("brightness", "ddc:1") == svc.percent("brightness", "ddc:2") == 30
+    assert svc.find_monitor("2").name == "Right" and svc.find_monitor("lef").id == "ddc:1"
+
+
 # ── config writing (settings window) ─────────────────────────────────────────
 from cornerwindow.config_edit import TomlDocument, UserConfigWriter, dump_value  # noqa: E402
 
@@ -362,3 +382,104 @@ def test_origin_tracking(tmp_path):
     cfg = config.load({"hostname": "pc", "monitor_models": []}, tmp_path, user)
     assert (cfg.origin("a", "x"), cfg.origin("a", "y"), cfg.origin("a", "z")) == ("default", "machine", "yours")
     assert cfg.base["a"]["z"] == 1  # what reset returns to
+
+
+def test_pw_dump_streams_and_grouping():
+    import json
+
+    from cornerwindow.platform.audio.base import group_streams, parse_pactl_streams, parse_pw_dump
+
+    def node(i, app, vols, mute=False, cls="Stream/Output/Audio"):
+        return {"id": i, "info": {"props": {"media.class": cls, "application.name": app,
+                                             "application.process.binary": app.lower()},
+                                  "params": {"Props": [{"channelVolumes": vols, "mute": mute}]}}}
+
+    text = json.dumps([node(1, "Zen", [0.125, 0.125]), node(2, "Zen", [1.0, 1.0]),
+                       node(3, "Spotify", [0.0], mute=True), node(4, "Mic", [1.0], cls="Audio/Source"),
+                       node(5, "speech-dispatcher-dummy", [1.0])])
+    streams = parse_pw_dump(text)
+    assert [s.id for s in streams] == ["1", "2", "3", "5"]
+    assert streams[0].volume == 0.5  # cube root of the linear 0.125, like wpctl shows it
+    apps = group_streams(streams, ["speech-dispatcher"])
+    assert [(a.app, a.ids, a.volume, a.muted) for a in apps] == [("Zen", ["1", "2"], 1.0, False),
+                                                                ("Spotify", ["3"], 0.0, True)]
+    assert parse_pw_dump("not json") == []
+
+    pactl = json.dumps([{"index": 7, "mute": False, "properties": {"application.name": "VLC"},
+                         "volume": {"front-left": {"value_percent": "40%"}, "front-right": {"value_percent": "60%"}}}])
+    (vlc,) = parse_pactl_streams(pactl)
+    assert vlc.id == "7" and vlc.app == "VLC" and vlc.volume == 0.6
+
+
+def test_nmcli_parsing():
+    from cornerwindow.platform.network import parse_connections, parse_wifi_list, split_terse
+
+    assert split_terse(r"*:Cafe\:Guest:70:WPA2") == ["*", "Cafe:Guest", "70", "WPA2"]
+    text = "\n".join([
+        ":Home:40:WPA2", "*:Home:80:WPA2", ":Cafe:90:", ":Neighbour:95:WPA1 WPA2", "::50:WPA2",
+    ])
+    nets = parse_wifi_list(text, known={"Home"})
+    assert [n.ssid for n in nets] == ["Home", "Neighbour", "Cafe"]
+    assert nets[0].active and nets[0].known and nets[0].signal == 80
+    assert not nets[2].secure
+    conns = parse_connections("Home:802-11-wireless:yes\nWork VPN:vpn:no\nwg0:wireguard:yes")
+    assert conns == [("Home", "802-11-wireless", True), ("Work VPN", "vpn", False), ("wg0", "wireguard", True)]
+
+
+def test_upower_devices():
+    from cornerwindow.platform.power.upower import device_from, sort_devices
+
+    laptop = device_from("/b", {"Type": 2, "PowerSupply": True, "Percentage": 42.0, "State": 2,
+                                "TimeToEmpty": 5400, "Model": "BAT0"})
+    mouse = device_from("/m", {"Type": 5, "Percentage": 0.0, "BatteryLevel": 7, "Model": "MX Master"})
+    assert laptop.is_laptop and laptop.state == "discharging" and not laptop.charging
+    assert mouse.kind == "mouse" and mouse.percent == 80 and not mouse.is_laptop
+    assert device_from("/ac", {"Type": 1}) is None  # line power is not a battery
+    assert device_from("/gone", {"Type": 5, "IsPresent": False}) is None
+    assert [d.path for d in sort_devices([mouse, laptop])] == ["/b", "/m"]
+
+
+@pytest.mark.parametrize("text,value,unit", [
+    ("5 km to mi", 3.10686, "mi"), ("70 f in c", 21.1111, "°C"), ("0 c to k", 273.15, "K"),
+    ("2.5 GB to MB", 2500, "MB"), ("1 GiB in MiB", 1024, "MiB"), ("90 min to h", 1.5, "h"),
+    ("100 km/h to mph", 62.1371, "mph"), ("1 gal to l", 3.78541, "l"), ("1,5 kg to lb", 3.30693, "lb"),
+])
+def test_unit_conversion(text, value, unit):
+    result = calc.convert(text)
+    assert result is not None and result[1] == unit
+    assert result[0] == pytest.approx(value, rel=1e-4)
+
+
+def test_not_a_conversion():
+    assert calc.convert("5 km to kg") is None  # different dimensions
+    assert calc.convert("b 40") is None
+    assert calc.format_conversion((3.106855, "mi")) == "3.1069 mi"
+
+
+def test_app_ranking():
+    from cornerwindow.core.launcher import AppEntry, rank_apps
+
+    apps = [AppEntry("Firefox", ["browser", "firefox"]), AppEntry("Files", ["nautilus", "folder"]),
+            AppEntry("GNOME Disks", ["gnome-disks"]), AppEntry("Visual Studio Code", ["code", "editor"]),
+            AppEntry("Spotify", ["music"])]
+    assert [a.name for a in rank_apps("fi", apps)] == ["Files", "Firefox"]
+    assert rank_apps("disk", apps)[0].name == "GNOME Disks"
+    assert rank_apps("code", apps)[0].name == "Visual Studio Code"
+    assert rank_apps("music", apps)[0].name == "Spotify"
+    assert rank_apps("spfy", apps)[0].name == "Spotify"  # letters in order
+    assert rank_apps("zzz", apps) == []
+
+
+def test_writer_set_many_writes_only_changed_layout_keys(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("# mine\n[modules]\ndrawer = [\"timer\"]   # tabs\n")
+    writer = UserConfigWriter(path)
+    base = {"top": ["commandbar"], "columns": [["a"], ["b"]], "drawer": ["timer"], "hidden": []}
+    # hiding a card: only `hidden` differs from the defaults, and the user's drawer line goes back to default
+    writer.set_many("modules", {"top": ["commandbar"], "columns": [["a"], ["b"]], "drawer": ["timer"],
+                                "hidden": ["b"]}, base)
+    text = path.read_text()
+    assert "# mine" in text and 'hidden = ["b"]' in text
+    assert "columns" not in text and "drawer" not in text
+    writer.reset("modules", "hidden", "columns")
+    assert "hidden" not in path.read_text()

@@ -33,7 +33,10 @@ class Editor:
 
 
 def make(field: Field, value: Any, on_change: OnChange, ctx: dict) -> Editor:
+    from .layout_editor import layout_editor, switchlist_editor
+
     builder = {
+        "layout": layout_editor, "switchlist": switchlist_editor, "place_search": _place_search,
         "bool": _bool, "int": _number, "float": _number, "choice": _choice, "action": _choice,
         "sensor": _choice, "text": _text, "color": _color, "list": _list, "modules": _list,
         "optional_int": _optional, "optional_float": _optional, "columns": _columns,
@@ -596,6 +599,76 @@ def _toml(field, value, on_change, ctx) -> Editor:
 
     def _set(v):
         view.get_buffer().set_text(dump_value(v) if v is not None else "")
+
+    editor._set = _set
+    return editor
+
+
+def _place_search(field, value, on_change, ctx) -> Editor:
+    """Type a city, press Find, pick a match: writes place, latitude and longitude together.
+    The name goes to Open-Meteo's geocoder only when Find is pressed."""
+    from ...core import tasks
+    from ...modules.weather import geocode
+
+    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    line = Gtk.Box(spacing=6)
+    entry = Gtk.Entry()
+    entry.set_placeholder_text("City, e.g. Warsaw")
+    entry.set_hexpand(True)
+    line.pack_start(entry, True, True, 0)
+    find = chip("Find")
+    line.pack_start(find, False, False, 0)
+    outer.pack_start(line, False, False, 0)
+    current = label("", "cw-dim cw-small")
+    outer.pack_start(current, False, False, 0)
+    results = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    outer.pack_start(results, False, False, 0)
+    editor = Editor(outer)
+
+    def clear_results() -> None:
+        for child in results.get_children():
+            results.remove(child)
+            child.destroy()
+
+    def show(matches) -> None:
+        clear_results()
+        if not matches:
+            results.pack_start(label("No place found", "cw-dim cw-small"), False, False, 0)
+        for match in matches:
+            button = Gtk.Button(label=match["label"])
+            button.set_relief(Gtk.ReliefStyle.NONE)
+            button.set_can_focus(False)
+            button.get_style_context().add_class("cw-row")
+            button.get_child().set_xalign(0)
+
+            def choose(_b, m=match) -> None:
+                entry.set_text(m["place"])
+                clear_results()
+                _emit(editor, on_change, {"place": m["place"], "latitude": m["latitude"],
+                                          "longitude": m["longitude"]})
+
+            button.connect("clicked", choose)
+            results.pack_start(button, False, False, 0)
+        results.show_all()
+
+    def search(*_a) -> None:
+        name = entry.get_text().strip()
+        if not name:
+            return
+        clear_results()
+        results.pack_start(label("Searching…", "cw-dim cw-small"), False, False, 0)
+        results.show_all()
+        tasks.run_async(lambda: geocode(name), show,
+                        error=lambda exc: show([]) or current.set_text(f"Search failed: {exc}"))
+
+    find.connect("clicked", search)
+    entry.connect("activate", search)
+
+    def _set(v) -> None:
+        v = v or {}
+        entry.set_text(str(v.get("place") or ""))
+        lat, lon = v.get("latitude"), v.get("longitude")
+        current.set_text(f"At {lat}, {lon}" if lat is not None and lon is not None else "No place set yet")
 
     editor._set = _set
     return editor

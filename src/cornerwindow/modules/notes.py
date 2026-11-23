@@ -7,7 +7,7 @@ from gi.repository import GLib, Gtk
 from .base import Module, module
 
 
-@module("notes", title="Notes", area="drawer", icon="notes")
+@module("notes", title="Notes", area="drawer", icon="notes", description="A scratchpad that saves itself")
 class Notes(Module):
     def setup(self) -> None:
         self.path = self.ctx.data_dir / "notes.txt"

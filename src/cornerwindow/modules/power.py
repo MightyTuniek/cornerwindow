@@ -18,7 +18,7 @@ ACTIONS = {
 }
 
 
-@module("power", title="Power")
+@module("power", title="Power", icon="poweroff", description="Lock, sleep, restart and shut down")
 class Power(Module):
     def configure(self) -> None:
         self.items = [i for i in self.config.get("items", ["lock", "suspend", "reboot", "poweroff"]) if i in ACTIONS]

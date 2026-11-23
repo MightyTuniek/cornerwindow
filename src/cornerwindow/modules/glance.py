@@ -30,7 +30,7 @@ class Metric(Gtk.Box):
             self.spark.push(point)
 
 
-@module("glance", title="System", icon="monitor")
+@module("glance", title="System", icon="monitor", description="CPU, GPU, memory, network and disk")
 class Glance(Module):
     def setup(self) -> None:
         self.cpu = sensors.CpuUsage()

@@ -1,83 +1,121 @@
-"""MPRIS2 over Gio D-Bus, event driven (PropertiesChanged), no polling except Position."""
+"""MPRIS2 over Gio D-Bus, event driven (PropertiesChanged), no polling except Position.
+
+Every player that speaks MPRIS shows up: Spotify, VLC, mpv, Rhythmbox, Cider (Apple
+Music), Strawberry, KDE Connect (your phone), and Firefox / Chrome tabs (YouTube,
+SoundCloud, Apple Music web, YouTube Music...).
+"""
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from gi.repository import Gio, GLib
 
 from ...core import log
-from ...core.bus import EventBus
+from .model import NowPlaying
+from .sites import clean_app_name, site_for, strip_site_suffix
+
+if TYPE_CHECKING:
+    from .service import MediaService
 
 _log = log.get("mpris")
 PREFIX = "org.mpris.MediaPlayer2."
 PATH = "/org/mpris/MediaPlayer2"
+ROOT_IFACE = "org.mpris.MediaPlayer2"
 PLAYER_IFACE = "org.mpris.MediaPlayer2.Player"
+PROPS_IFACE = "org.freedesktop.DBus.Properties"
+NO_TRACK = "/org/mpris/MediaPlayer2/TrackList/NoTrack"
 
 
-@dataclass
-class NowPlaying:
-    player: str  # bus name
-    identity: str  # e.g. "firefox"
-    status: str  # Playing | Paused | Stopped
-    title: str
-    artist: str
-    art_url: str
-    length: float  # seconds (0 = unknown)
-    position: float  # seconds at `position_time`
-    position_time: float
-    rate: float = 1.0
+def _desktop_icon(entry: str) -> str:
+    from ..desktop import app_icon
 
-    @property
-    def playing(self) -> bool:
-        return self.status == "Playing"
-
-    def position_now(self) -> float:
-        if not self.playing:
-            return self.position
-        return self.position + (time.monotonic() - self.position_time) * self.rate
+    return app_icon(entry)
 
 
-class Player:
+class MprisPlayer:
     def __init__(self, name: str, service: "MediaService") -> None:
-        self.name = name
+        self.key = name
         self.service = service
         self.last_active = time.monotonic()
         self.position = 0.0
         self.position_time = time.monotonic()
+        self._status = None
         self.proxy = Gio.DBusProxy.new_for_bus_sync(
             Gio.BusType.SESSION, Gio.DBusProxyFlags.DO_NOT_AUTO_START, None,
             name, PATH, PLAYER_IFACE, None)
         self.proxy.connect("g-properties-changed", self._changed)
+        self.root = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SESSION, Gio.DBusProxyFlags.DO_NOT_AUTO_START, None,
+            name, PATH, ROOT_IFACE, None)
+        self.identity = name[len(PREFIX):].split(".")[0]
+        self.app = clean_app_name(self._root_prop("Identity", ""), self.identity)
+        self.desktop_entry = str(self._root_prop("DesktopEntry", "") or "")
+        self.app_icon = _desktop_icon(self.desktop_entry) or _desktop_icon(self.identity)
+        self._status = self.prop("PlaybackStatus")
 
+    # -- properties -----------------------------------------------------------------
     def prop(self, key: str, default=None):
         value = self.proxy.get_cached_property(key)
         return value.unpack() if value is not None else default
 
+    def _root_prop(self, key: str, default=None):
+        value = self.root.get_cached_property(key)
+        return value.unpack() if value is not None else default
+
+    def names(self) -> str:
+        """Everything a [media] ignore/prefer pattern may match, lower case."""
+        return f"{self.key} {self.identity} {self.app} {self.desktop_entry}".lower()
+
+    @property
+    def playing(self) -> bool:
+        return self.prop("PlaybackStatus") == "Playing"
+
     def _changed(self, *_args) -> None:
-        if self.prop("PlaybackStatus") == "Playing":
+        status = self.prop("PlaybackStatus")
+        if status == "Playing":
             self.last_active = time.monotonic()
+        started = status == "Playing" and self._status != "Playing"
+        self._status = status
         self.fetch_position()
-        self.service.changed()
+        self.service.changed(started=self if started else None)
 
     def snapshot(self) -> NowPlaying:
         meta = self.prop("Metadata", {}) or {}
         artist = meta.get("xesam:artist", "")
         if isinstance(artist, list):
-            artist = ", ".join(artist)
-        identity = self.name[len(PREFIX):].split(".")[0]
+            artist = ", ".join(str(a) for a in artist)
+        title = str(meta.get("xesam:title", "") or "")
+        art = str(meta.get("mpris:artUrl", "") or "")
+        site = site_for(str(meta.get("xesam:url", "") or ""), art, title)
+        shuffle = self.prop("Shuffle")
+        loop = self.prop("LoopStatus")
         return NowPlaying(
-            player=self.name, identity=identity,
+            player=self.key, identity=self.identity,
             status=self.prop("PlaybackStatus", "Stopped") or "Stopped",
-            title=str(meta.get("xesam:title", "") or ""),
+            title=strip_site_suffix(title) if site else title,
             artist=str(artist or ""),
-            art_url=str(meta.get("mpris:artUrl", "") or ""),
+            album=str(meta.get("xesam:album", "") or ""),
+            art_url=art,
             length=float(meta.get("mpris:length", 0) or 0) / 1e6,
             position=self.position, position_time=self.position_time,
             rate=float(self.prop("Rate", 1.0) or 1.0),
+            app=self.app, app_icon=self.app_icon, site=site,
+            can_next=bool(self.prop("CanGoNext", True)),
+            can_prev=bool(self.prop("CanGoPrevious", True)),
+            can_seek=bool(self.prop("CanSeek", False)) and float(meta.get("mpris:length", 0) or 0) > 0,
+            can_raise=bool(self._root_prop("CanRaise", False)),
+            shuffle=None if shuffle is None else bool(shuffle),
+            loop=None if loop is None else str(loop),
         )
 
+    def _track_id(self) -> str:
+        meta = self.prop("Metadata", {}) or {}
+        track = str(meta.get("mpris:trackid", "") or "")
+        return track if track.startswith("/") and track != NO_TRACK else ""
+
+    # -- position -------------------------------------------------------------------
     def fetch_position(self) -> None:
         def done(proxy, result) -> None:
             try:
@@ -88,18 +126,53 @@ class Player:
             except GLib.Error:
                 pass
 
-        self.proxy.call("org.freedesktop.DBus.Properties.Get",
-                        GLib.Variant("(ss)", (PLAYER_IFACE, "Position")),
+        self.proxy.call(f"{PROPS_IFACE}.Get", GLib.Variant("(ss)", (PLAYER_IFACE, "Position")),
                         Gio.DBusCallFlags.NONE, 1000, None, done)
 
-    def call(self, method: str) -> None:
-        self.proxy.call(method, None, Gio.DBusCallFlags.NONE, 2000, None, None)
+    # -- control --------------------------------------------------------------------
+    def call(self, method: str, args: GLib.Variant | None = None) -> None:
+        self.proxy.call(method, args, Gio.DBusCallFlags.NONE, 2000, None, None)
+
+    def play_pause(self) -> None:
+        self.call("PlayPause")
+
+    def next(self) -> None:
+        self.call("Next")
+
+    def previous(self) -> None:
+        self.call("Previous")
+
+    def seek_to(self, seconds: float) -> None:
+        seconds = max(0.0, seconds)
+        track = self._track_id()
+        if track:
+            self.call("SetPosition", GLib.Variant("(ox)", (track, int(seconds * 1e6))))
+        else:  # players without track ids still take a relative Seek
+            now = self.snapshot().position_now()
+            self.call("Seek", GLib.Variant("(x)", (int((seconds - now) * 1e6),)))
+        self.position, self.position_time = seconds, time.monotonic()
+        self.service.changed()
+        GLib.timeout_add(300, lambda: self.fetch_position() and False)
+
+    def _set(self, prop: str, value: GLib.Variant) -> None:
+        self.proxy.call(f"{PROPS_IFACE}.Set", GLib.Variant("(ssv)", (PLAYER_IFACE, prop, value)),
+                        Gio.DBusCallFlags.NONE, 2000, None, None)
+
+    def set_shuffle(self, on: bool) -> None:
+        self._set("Shuffle", GLib.Variant("b", on))
+
+    def set_loop(self, loop: str) -> None:
+        self._set("LoopStatus", GLib.Variant("s", loop))
+
+    def raise_(self) -> None:
+        self.root.call("Raise", None, Gio.DBusCallFlags.NONE, 2000, None, None)
 
 
-class MediaService:
-    def __init__(self, bus: EventBus) -> None:
-        self.bus = bus
-        self.players: dict[str, Player] = {}
+class MprisWatcher:
+    """Tracks org.mpris.MediaPlayer2.* names on the session bus."""
+
+    def __init__(self, service: "MediaService") -> None:
+        self.service = service
         self._conn: Gio.DBusConnection | None = None
 
     def start(self) -> None:
@@ -111,63 +184,29 @@ class MediaService:
         self._conn.signal_subscribe("org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
                                     "/org/freedesktop/DBus", None, Gio.DBusSignalFlags.NONE,
                                     self._owner_changed)
-        names = self._conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
-                                     "org.freedesktop.DBus", "ListNames", None,
-                                     GLib.VariantType.new("(as)"), Gio.DBusCallFlags.NONE, 2000,
-                                     None).unpack()[0]
+        try:
+            names = self._conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                         "org.freedesktop.DBus", "ListNames", None,
+                                         GLib.VariantType.new("(as)"), Gio.DBusCallFlags.NONE, 2000,
+                                         None).unpack()[0]
+        except GLib.Error as exc:
+            _log.info("ListNames failed: %s", exc)
+            return
         for name in names:
             if name.startswith(PREFIX):
                 self._add(name)
 
     def _add(self, name: str) -> None:
         try:
-            self.players[name] = Player(name, self)
+            self.service.add(MprisPlayer(name, self.service))
         except GLib.Error as exc:
             _log.debug("Cannot watch %s: %s", name, exc)
 
     def _owner_changed(self, _conn, _sender, _path, _iface, _signal, params) -> None:
-        name, old, new = params.unpack()
+        name, _old, new = params.unpack()
         if not name.startswith(PREFIX):
             return
-        if new and name not in self.players:
+        if new:
             self._add(name)
-        elif not new:
-            self.players.pop(name, None)
-        self.changed()
-
-    def changed(self) -> None:
-        self.bus.publish("media.changed", now=self.current())
-
-    def current(self) -> NowPlaying | None:
-        if not self.players:
-            return None
-        ranked = sorted(self.players.values(),
-                        key=lambda p: (p.prop("PlaybackStatus") == "Playing", p.last_active), reverse=True)
-        snap = ranked[0].snapshot()
-        if not snap.title and snap.status == "Stopped":
-            return None
-        return snap
-
-    def _active(self) -> Player | None:
-        now = self.current()
-        return self.players.get(now.player) if now else None
-
-    def play_pause(self) -> None:
-        player = self._active()
-        if player:
-            player.call("PlayPause")
-
-    def next(self) -> None:
-        player = self._active()
-        if player:
-            player.call("Next")
-
-    def previous(self) -> None:
-        player = self._active()
-        if player:
-            player.call("Previous")
-
-    def refresh_position(self) -> None:
-        player = self._active()
-        if player:
-            player.fetch_position()
+        else:
+            self.service.remove(name)

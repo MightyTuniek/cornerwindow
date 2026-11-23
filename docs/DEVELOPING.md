@@ -11,7 +11,7 @@ from cornerwindow.platform import sensors
 from cornerwindow.ui.widgets import Card, label
 
 
-@module("uptime_card", title="Uptime")
+@module("uptime_card", title="Uptime", icon="timer", description="How long this PC has been up")
 class UptimeCard(Module):
     def build(self):
         card = Card("Uptime")
@@ -34,10 +34,10 @@ Everything a module needs is on `self.ctx`:
 | Member | Purpose |
 |---|---|
 | `section` | This module's `[uptime_card]` config table |
-| `services` | `display`, `audio`, `media`, `nightlight`, `wifi`, `bluetooth`, `dark_mode`, `dnd`, `caffeine`, `clipboard` |
+| `services` | `display`, `audio`, `media`, `battery`, `nightlight`, `wifi`, `bluetooth`, `vpn`, `airplane`, `power_profiles`, `dark_mode`, `dnd`, `caffeine`, `clipboard` |
 | `actions.register(name, fn)` | Register a named action that config can bind to trigger gestures |
 | `activity.show(id, level=..., label=..., dot=..., color=...)` | Show a live activity on the collapsed trigger |
-| `bus.subscribe(topic, fn)` | Subscribe to events such as `display.changed`, `audio.changed`, `media.changed` |
+| `bus.subscribe(topic, fn)` | Subscribe to events such as `display.changed`, `display.monitor_changed`, `audio.changed`, `media.changed`, `battery.changed` |
 | `every(sec, fn)` | Call `fn` every `sec` seconds while the panel is open |
 | `run_async(fn, then)` | Run `fn` off the main thread, then call `then` with the result |
 | `notify(title, body)` | Show a desktop notification |
@@ -54,7 +54,9 @@ Override any of these on your `Module` subclass:
 - `on_close()` stops it when the panel closes.
 - `setup()` registers actions even when the card isn't shown.
 
-To add a quick toggle, write a `Toggle` subclass with `@toggle("id")` in [`src/cornerwindow/modules/toggles.py`](../src/cornerwindow/modules/toggles.py).
+`title`, `icon` and `description` show on the settings Features page, where every card can be switched off (its id goes to `[modules] hidden`, and it keeps its place) or dragged elsewhere. The layout logic is in [`modules/layout.py`](../src/cornerwindow/modules/layout.py).
+
+To add a quick toggle, write a `Toggle` subclass with `@toggle("id")` in [`src/cornerwindow/modules/toggles.py`](../src/cornerwindow/modules/toggles.py). For a picker (like Wi-Fi networks), set `has_picker = True` and implement `picker_items()` (a list of `PickItem`) and `pick(item)`; both run on a worker thread. A tri-state toggle sets `cycles = True` and implements `cycle()`.
 
 ### Colours and themes
 
@@ -96,15 +98,16 @@ src/cornerwindow/
   config_edit.py    in-place TOML editing that keeps comments; the settings writer
   services.py       lazy service container (ctx.services)
   doctor.py         `cornerwindow doctor`
-  core/             springs (anim), event bus, workers (tasks), live activities, actions, state, calc
+  core/             springs (anim), event bus, workers (tasks), live activities, actions, state,
+                    calc (sums and unit conversion), launcher (app ranking), dates (month grids)
   platform/         all OS access, behind small interfaces with probing
     display/        native DDC/CI (ddc_i2c), ddcutil, laptop backlight, xrandr gamma, night light
     audio/          wpctl (PipeWire), pactl (PulseAudio)
-    media/          MPRIS
+    media/          MPRIS and MPD players, site detection for browser tabs (sites.py), MediaService
     window/         X11 (EWMH + Wnck) and wlr-layer-shell placement
-    network/        Wi-Fi and network throughput
+    network/        Wi-Fi (networks, joining), Bluetooth devices, VPN, airplane mode
     desktop/        dark mode, do-not-disturb and other desktop settings
-    power/          lock, sleep, restart, shut down, sleep inhibit
+    power/          lock, sleep, restart, shut down, sleep inhibit, power profiles, UPower batteries
     sensors/        CPU, GPU, memory, disk and uptime
     backdrop/       what's behind our windows, for Liquid Glass (live X11 compositing, wallpaper)
     clipboard.py    clipboard access
@@ -116,7 +119,8 @@ src/cornerwindow/
     theme.py        palettes (black, glass dark, glass light) read by every custom-drawn widget
     content.py      card grid with staggered, offscreen-rendered entrance
     widgets/        pill slider, toggle tile, sparkline, hold button, cards
-    settings/       the settings window: schema.py (every option), editors.py, window.py
+    settings/       the settings window: schema.py (every option), editors.py, layout_editor.py
+                    (the Features page and switch lists), window.py
     style.css       default stylesheet
   modules/          one file per feature card (base.py documents the API)
 ```
@@ -133,8 +137,11 @@ python3 -m pytest
 The tests cover:
 
 - config layering, in-place TOML editing and the settings writer
+- the card layout model (hide, move, area rules)
 - springs and the outline geometry
-- DDC/CI packet encoding and checksums
-- the wpctl and ddcutil parsers
-- the calculator and timer parsing
+- DDC/CI packet encoding and checksums, display limits (also per monitor)
+- the wpctl, ddcutil, pw-dump, pactl, nmcli, UPower and MPD parsers
+- media: site detection for browser tabs, player ranking, seek parsing
+- the calculator, unit conversion, app ranking, timer and stopwatch, month grids
+- Open-Meteo forecast and geocoder parsing
 - module loading

@@ -80,8 +80,43 @@ class DoNotDisturb:
             self._s.set_boolean("show-banners", not on)
 
 
+def open_settings(panel: str) -> None:
+    """Open the desktop's settings at a panel ("wifi", "bluetooth", "power")."""
+    from .. import proc
+
+    for args in (["gnome-control-center", panel], ["cinnamon-settings", panel],
+                 ["systemsettings", {"wifi": "kcm_networkmanagement", "bluetooth": "kcm_bluetooth",
+                                     "power": "kcm_powerdevilprofilesconfig"}.get(panel, panel)]):
+        if proc.which(args[0]):
+            proc.spawn(args)
+            return
+    _log.info("No settings app found for %s", panel)
+
+
 def open_uri(uri: str) -> None:
     try:
         Gio.AppInfo.launch_default_for_uri(uri, None)
     except Exception as exc:
         _log.warning("Could not open %s: %s", uri, exc)
+
+
+def app_icon(name: str) -> str:
+    """A Gio.Icon string for an app id, binary or DesktopEntry ("spotify", "zen",
+    "org.gnome.Rhythmbox3"), including Flatpak ids such as app.zen_browser.zen. '' if unknown."""
+    if not name:
+        return ""
+    lower = name.lower()
+    candidates = [f"{name}.desktop", f"{lower}.desktop"]
+    try:
+        for group in Gio.DesktopAppInfo.search(name):
+            candidates += [i for i in group if i.lower().endswith(f".{lower}.desktop") or i.lower() == f"{lower}.desktop"]
+    except Exception:
+        pass
+    for desktop_id in candidates:
+        try:
+            info = Gio.DesktopAppInfo.new(desktop_id)
+        except TypeError:
+            info = None
+        if info is not None and info.get_icon() is not None:
+            return info.get_icon().to_string()
+    return ""

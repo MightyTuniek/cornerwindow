@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...core import log, tasks
 from ...core.bus import EventBus
-from .base import AudioBackend, Device, Level
+from .base import AppVolume, AudioBackend, Device, Level, group_streams
 from .pactl import PactlBackend
 from .wpctl import WpctlBackend
 
@@ -36,8 +36,9 @@ class AudioService:
     def available(self) -> bool:
         return self.backend is not None
 
-    def friendly(self, device: Device) -> str:
-        for needle, label in self.config.get("names", {}).items():
+    def friendly(self, device: Device, kind: str = "sink") -> str:
+        names = self.config.get("names" if kind == "sink" else "input_names", {}) or {}
+        for needle, label in names.items():
             if needle.lower() in device.name.lower():
                 return label
         name = device.name
@@ -96,8 +97,33 @@ class AudioService:
             tasks.run_async(lambda: self.backend.set_default(kind, device_id),
                             lambda _: self.refresh(then))
 
+    # -- per-app volume ------------------------------------------------------------------
+    def apps(self, then) -> None:
+        """Calls then(list[AppVolume]) with the apps playing sound right now."""
+        if not self.backend:
+            then([])
+            return
+        ignore = [str(p) for p in self.config.get("mixer_ignore", ["speech-dispatcher"]) or []]
+        tasks.run_async(lambda: group_streams(self.backend.streams(), ignore), then)
+
+    def set_app_volume(self, app: AppVolume, volume: float) -> None:
+        app.volume = max(0.0, min(self.max_volume, volume))
+        for stream_id in app.ids:
+            self._writer.submit((("stream", stream_id), "volume"), app.volume)
+
+    def set_app_muted(self, app: AppVolume, muted: bool) -> None:
+        app.muted = muted
+        for stream_id in app.ids:
+            self._writer.submit((("stream", stream_id), "mute"), muted)
+
     def _apply(self, key, value) -> None:
         kind, what = key
+        if isinstance(kind, tuple):  # ("stream", id)
+            if what == "volume":
+                self.backend.set_stream_volume(kind[1], value)
+            else:
+                self.backend.set_stream_muted(kind[1], value)
+            return
         if what == "volume":
             self.backend.set_volume(kind, value)
         else:

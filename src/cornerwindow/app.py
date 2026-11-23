@@ -86,6 +86,8 @@ class CornerWindowApp(Gtk.Application):
                            *[Path(p) for p in self.config.get("modules.search_paths", [])]])
 
         self.actions.register("settings.toggle", self.toggle_settings, "Open / close settings")
+        self.actions.register("settings.page", lambda page="general": self.open_settings(page),
+                              "Open settings at a page")
         self.actions.register("theme.glass", self.set_glass, "Liquid Glass theme on / off")
         self._layout()
         self._apply_theme()
@@ -107,13 +109,19 @@ class CornerWindowApp(Gtk.Application):
     def _layout(self) -> None:
         """Fill the island's grid from [modules] (on startup and after every config change)."""
         island, host = self.island, self.host
+        hidden = set(self.config.get("modules.hidden", []) or [])
+        host.begin_layout()
         for module_id in self.config.get("modules.top", ["commandbar"]):
+            if module_id in hidden:
+                continue
             widget = host.build(module_id)
             if widget is not None:
                 island.grid.top.pack_start(widget, False, False, 0)
         for column_ids in self.config.get("modules.columns", []):
             column = island.grid.add_column()
             for module_id in column_ids:
+                if module_id in hidden:
+                    continue
                 widget = host.build(module_id)
                 if widget is not None:
                     island.grid.add_card(column, widget)
@@ -127,6 +135,17 @@ class CornerWindowApp(Gtk.Application):
             self.add_window(self.settings)
             self._apply_theme()
         self.settings.toggle()
+
+    def open_settings(self, page: str | None = None) -> None:
+        """Show settings (at `page`, e.g. "weather"); without a page this toggles them."""
+        if not self.island.is_open:
+            self.island.open()
+        if page and self.settings is not None and self.settings.shown:
+            self.settings.show_page(page)
+        else:
+            self.toggle_settings()
+            if page:
+                self.settings.show_page(page)
 
     # -- theme ----------------------------------------------------------------------------
     def glass_enabled(self) -> bool:
@@ -307,13 +326,7 @@ class CornerWindowApp(Gtk.Application):
         if cmd == "settings":
             if not self.island.is_open:
                 self.island.open()
-            page = args[1] if len(args) > 1 else None
-            if page and self.settings is not None and self.settings.shown:
-                self.settings.show_page(page)
-            else:
-                self.toggle_settings()
-                if page:
-                    self.settings.show_page(page)
+            self.open_settings(args[1] if len(args) > 1 else None)
             return "", 0
         if cmd == "reload":
             self.schedule_reload(external=True, delay=0)

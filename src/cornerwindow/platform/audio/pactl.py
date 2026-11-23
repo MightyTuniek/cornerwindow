@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .. import proc
-from .base import AudioBackend, Device, Level
+from .base import AudioBackend, Device, Level, Stream, parse_pactl_streams
 
 _DEFAULT = {"sink": "@DEFAULT_SINK@", "source": "@DEFAULT_SOURCE@"}
 
@@ -49,3 +49,12 @@ class PactlBackend(AudioBackend):
 
     def set_default(self, kind: str, device_id: str) -> None:
         proc.run(["pactl", f"set-default-{kind}", device_id], 2)
+
+    def streams(self) -> list[Stream]:
+        return parse_pactl_streams(proc.run(["pactl", "-f", "json", "list", "sink-inputs"], 3))
+
+    def set_stream_volume(self, stream_id: str, volume: float) -> None:
+        proc.run(["pactl", "set-sink-input-volume", stream_id, f"{round(max(0.0, volume) * 100)}%"], 2)
+
+    def set_stream_muted(self, stream_id: str, muted: bool) -> None:
+        proc.run(["pactl", "set-sink-input-mute", stream_id, "1" if muted else "0"], 2)

@@ -13,7 +13,8 @@ from ..draw import mix, platter_rim
 
 class ToggleTile(Gtk.EventBox):
     def __init__(self, icon: str, title: str, on_toggle: Callable[[bool], None],
-                 color=(0.039, 0.518, 1.0), size: int = 46, icon_off: str | None = None) -> None:
+                 color=(0.039, 0.518, 1.0), size: int = 46, icon_off: str | None = None,
+                 on_more: Callable[[], None] | None = None) -> None:
         super().__init__()
         self.set_visible_window(False)
         self.set_above_child(True)  # the whole tile (disc and label) takes the clicks
@@ -24,6 +25,8 @@ class ToggleTile(Gtk.EventBox):
         self.size = size
         self.active = False
         self.subtitle_text = ""
+        self.title = title
+        self.on_more = on_more  # opens a picker: click the label/chevron, or right-click
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         self.disc = Gtk.DrawingArea()
@@ -34,8 +37,18 @@ class ToggleTile(Gtk.EventBox):
         self.label = Gtk.Label(label=title)
         self.label.get_style_context().add_class("cw-tile-label")
         self.label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.label.set_max_width_chars(9)
-        box.pack_start(self.label, False, False, 0)
+        self.label.set_max_width_chars(9 if on_more is None else 8)
+        line = Gtk.Box(spacing=1)
+        line.set_halign(Gtk.Align.CENTER)
+        line.pack_start(self.label, False, False, 0)
+        if on_more is not None:
+            from .card import resolve_icon
+
+            chevron = Gtk.Image.new_from_icon_name(resolve_icon("chevron"), Gtk.IconSize.MENU)
+            chevron.set_pixel_size(10)
+            chevron.get_style_context().add_class("cw-tile-label")
+            line.pack_start(chevron, False, False, 0)
+        box.pack_start(line, False, False, 0)
         self.add(box)
 
         self.on = Spring(0.0, response=0.3, damping_fraction=1.0)
@@ -60,7 +73,14 @@ class ToggleTile(Gtk.EventBox):
             self.disc.queue_draw()
 
     def set_title(self, title: str) -> None:
-        self.label.set_text(title)
+        self.title = title
+        self.label.set_text(self.subtitle_text or title)
+
+    def set_subtitle(self, text: str | None) -> None:
+        """Show e.g. the network name in place of the title (same size: nothing relayouts)."""
+        self.subtitle_text = text or ""
+        self.label.set_text(self.subtitle_text or self.title)
+        self.set_tooltip_text(f"{self.title}: {self.subtitle_text}" if self.subtitle_text else self.title)
 
     def _set_hover(self, inside: bool) -> None:
         self.hover.to(1.0 if inside else 0.0)
@@ -73,12 +93,19 @@ class ToggleTile(Gtk.EventBox):
         return True
 
     def _released(self, _w, event) -> bool:
+        if event.button == 3 and self.on_more is not None:
+            self.on_more()
+            return True
         if event.button != 1:
             return False
         self.press.to(0.0)
         self.anim.kick()
         alloc = self.get_allocation()
         if 0 <= event.x <= alloc.width and 0 <= event.y <= alloc.height:
+            below_disc = event.y > self.disc.get_allocated_height()
+            if below_disc and self.on_more is not None:
+                self.on_more()  # the label opens the picker, the disc toggles
+                return True
             self.set_active(not self.active)
             self.on_toggle(self.active)
         return True

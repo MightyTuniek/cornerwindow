@@ -122,6 +122,7 @@ class Module:
     title: str = ""
     area: str = "main"  # "main" (a card) or "drawer" (a tab in the drawer)
     icon: str = ""
+    description: str = ""  # one line, shown on the settings Layout page
 
     def __init__(self, ctx: ModuleContext) -> None:
         self.ctx = ctx
@@ -152,11 +153,12 @@ class Module:
 _REGISTRY: dict[str, type[Module]] = {}
 
 
-def module(id: str, title: str = "", area: str = "main", icon: str = ""):
+def module(id: str, title: str = "", area: str = "main", icon: str = "", description: str = ""):
     """Class decorator that registers a module under `id`."""
 
     def wrap(cls: type[Module]) -> type[Module]:
         cls.id, cls.title, cls.area, cls.icon = id, title or id.title(), area, icon
+        cls.description = description or cls.description
         _REGISTRY[id] = cls
         return cls
 

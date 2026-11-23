@@ -20,7 +20,7 @@ The trigger stays almost invisible.
 | Middle-click | Mute output |
 | Right-click | Play or pause media |
 
-**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted, and a yellow dot while Awake is on.
+**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, and a green dot while music plays or the stopwatch runs.
 
 **Fullscreen.** The trigger hides while a fullscreen game or video has focus.
 
@@ -28,17 +28,24 @@ The trigger stays almost invisible.
 
 | Card | Contents |
 |---|---|
-| Display | Brightness and contrast over DDC/CI, presets, night light |
-| Sound | Volume slider, mic mute, output device switcher |
-| Now playing | Artwork, title, controls and progress for any MPRIS player |
-| Toggles | Wi-Fi, Bluetooth, night light, dark mode, focus, awake, mic mute |
+| Display | Brightness and contrast over DDC/CI, presets, night light; one slider per monitor if you unlink them |
+| Sound | Volume, output and input devices, mic level, and a slider for each app playing sound |
+| Now playing | Artwork, title, source, seekable progress, shuffle and repeat; chips switch between players |
+| Drives | USB sticks, SD cards and phones: open and eject (only while one is plugged in) |
+| Toggles | Wi-Fi and Bluetooth (with network and device pickers), night light, dark mode, focus, awake, power mode, VPN, airplane mode |
+| Battery | Laptop battery and wireless devices: mouse, keyboard, headset, controller (only when there is one) |
 | System | CPU, GPU, memory and network sparklines, disk space, uptime |
-| Drawer | Timer, clipboard history, self-saving scratchpad |
+| Clock | Time and date; click the date for a month calendar |
+| Drawer | Timer, stopwatch with laps, clipboard history, self-saving scratchpad |
 | Power | Lock, sleep, restart, shut down, each with press-and-hold to confirm |
-| Command bar | Type to run commands and calculations |
+| Weather | Now, the next hours and days (off by default) |
+| Command bar | Type to open apps, run commands, calculate and convert units |
+
+Choose which cards you see, and where, under **Settings → Features**: every card has a switch, and you drag it between the top row, the columns and the drawer. Quick toggles and power buttons are switched and reordered the same way on their own pages.
 
 - Display changes real monitor settings over DDC/CI, not a dimming filter. Click a preset (Day, Evening, Night, Movie) to apply it, or hold one to save your current values into it.
-- Now playing appears only while something is playing.
+- Now playing works with every player that speaks MPRIS: Spotify, VLC, mpv, Rhythmbox, Strawberry, Cider (Apple Music), KDE Connect (your phone), and browser tabs on YouTube, YouTube Music, SoundCloud, Apple Music, Spotify web, Deezer, Tidal, Twitch and more, labelled by site ("YouTube · Firefox"). MPD works directly too, without mpDris2. It appears only while something is loaded.
+- Click the label under the Wi-Fi or Bluetooth toggle (or right-click the toggle) to pick a network or connect a paired device.
 
 #### Command bar
 
@@ -46,13 +53,18 @@ Start typing anywhere in the open panel:
 
 | Input | Effect |
 |---|---|
-| `b 40` | Set brightness to 40 |
+| `firefox` | Open an app (any installed app, by name or keyword) |
+| `b 40` | Set brightness to 40 (`b 40 2` sets only the second monitor) |
 | `night` | Apply the Night preset |
 | `timer 10` | Start a 10-minute timer |
-| `mute` | Mute output |
+| `sw` | Start or pause the stopwatch |
+| `seek +30` | Skip ahead in what's playing (`seek 1:20`, `shuffle`, `repeat`, `player spotify`) |
+| `bt headphones` | Connect a paired Bluetooth device |
+| `5 km to mi` | Convert units: length, weight, volume, speed, temperature, data, time |
 | `2*(3+4)` | Calculate; <kbd>Enter</kbd> copies the answer |
+| anything else | Search the web (DuckDuckGo by default, set in Settings → Command bar) |
 
-`c`, `v`, `t`, `lock` and more are in the command bar too.
+`c`, `v`, `t`, `mute`, `lock`, `eject`, `battery`, `weather`, `settings` and more are in the command bar too.
 
 ## Install
 

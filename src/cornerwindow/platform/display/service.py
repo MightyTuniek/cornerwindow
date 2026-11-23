@@ -43,6 +43,7 @@ class DisplayService:
         self.ready = threading.Event()
         self.problems: list[str] = []
         self._percent: dict[str, float] = {}
+        self._monitor_percent: dict[tuple[str, str], float] = {}  # (monitor id, control) -> percent
         self._writer = tasks.LatestWins(self._apply, min_interval=0.0, name="display-writer")
 
     # -- discovery -------------------------------------------------------------------------
@@ -80,6 +81,9 @@ class DisplayService:
             values = [m.controls[control].percent for m in self.monitors if m.supports(control)]
             if values:
                 self._percent[control] = values[0]
+            for m in self.monitors:
+                if m.supports(control):
+                    self._monitor_percent[(m.id, control)] = m.controls[control].percent
         self.ready.set()  # set from the worker so main-thread callers may wait on it
 
     def _probed(self, on_ready: Callable[[], None] | None) -> None:
@@ -91,8 +95,21 @@ class DisplayService:
     def supports(self, control: str) -> bool:
         return any(m.supports(control) for m in self.monitors)
 
-    def percent(self, control: str) -> float | None:
+    def percent(self, control: str, monitor: str | None = None) -> float | None:
+        if monitor is not None:
+            return self._monitor_percent.get((monitor, control))
         return self._percent.get(control)
+
+    def monitors_for(self, control: str) -> list[Monitor]:
+        return [m for m in self.monitors if m.supports(control)]
+
+    def find_monitor(self, text: str, control: str = BRIGHTNESS) -> Monitor | None:
+        """'2' (1-based) or part of the name -> that monitor."""
+        candidates = self.monitors_for(control)
+        text = text.strip().lower()
+        if text.isdigit() and 1 <= int(text) <= len(candidates):
+            return candidates[int(text) - 1]
+        return next((m for m in candidates if text and text in m.name.lower()), None)
 
     def backend_names(self) -> list[str]:
         return sorted({m.backend.name for m in self.monitors if m.backend})
@@ -106,23 +123,38 @@ class DisplayService:
         except (TypeError, ValueError):
             return 100.0
 
-    def set_percent(self, control: str, percent: float, source: str = "") -> float:
+    def set_percent(self, control: str, percent: float, source: str = "", monitor: str | None = None) -> float:
         """Optimistic: cache + notify immediately, hardware catches up in the background.
-        Values are clamped to the configured limit, whoever asks (slider, preset, CLI)."""
+        Values are clamped to the configured limit, whoever asks (slider, preset, CLI).
+        `monitor` (a Monitor.id) sets just that one; None sets every monitor."""
         percent = max(0.0, min(self.limit(control), float(percent)))
-        self._percent[control] = percent
-        self._writer.submit(control, percent)
-        self.bus.publish("display.changed", control=control, percent=percent, source=source)
+        if monitor is None:
+            self._percent[control] = percent
+            for m in self.monitors_for(control):
+                self._monitor_percent[(m.id, control)] = percent
+            self._writer.submit(control, percent)
+            self.bus.publish("display.changed", control=control, percent=percent, source=source)
+            return percent
+        self._monitor_percent[(monitor, control)] = percent
+        first = self.monitors_for(control)
+        if first and first[0].id == monitor:
+            self._percent[control] = percent  # the summary value follows the first monitor
+        self._writer.submit((control, monitor), percent)
+        self.bus.publish("display.monitor_changed", control=control, monitor=monitor, percent=percent,
+                         source=source)
         return percent
 
-    def step(self, control: str, delta: float, source: str = "") -> float | None:
-        current = self.percent(control)
+    def step(self, control: str, delta: float, source: str = "", monitor: str | None = None) -> float | None:
+        current = self.percent(control, monitor)
         if current is None:
             return None
-        return self.set_percent(control, round(current + delta), source)
+        return self.set_percent(control, round(current + delta), source, monitor)
 
-    def _apply(self, control: str, percent: float) -> None:
+    def _apply(self, key, percent: float) -> None:
+        control, only = (key, None) if isinstance(key, str) else key
         for monitor in self.monitors:
+            if only is not None and monitor.id != only:
+                continue
             ctl = monitor.controls.get(control)
             if not ctl or not monitor.backend:
                 continue
@@ -152,12 +184,21 @@ class DisplayService:
                     if ctl:
                         monitor.controls[control] = ctl
                         fresh.setdefault(control, ctl.percent)
+                        fresh[(monitor.id, control)] = ctl.percent
             return fresh
 
         def done(fresh: dict[str, float]) -> None:
             if self._writer.busy():
                 return
+            for key, percent in list(fresh.items()):
+                if isinstance(key, tuple):
+                    if abs(self._monitor_percent.get(key, -1) - percent) >= 1:
+                        self._monitor_percent[key] = percent
+                        self.bus.publish("display.monitor_changed", control=key[1], monitor=key[0],
+                                         percent=percent, source="refresh")
             for control, percent in fresh.items():
+                if isinstance(control, tuple):
+                    continue
                 if abs(self._percent.get(control, -1) - percent) >= 1:
                     self._percent[control] = percent
                     self.bus.publish("display.changed", control=control, percent=percent, source="refresh")

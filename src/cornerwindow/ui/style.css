@@ -75,6 +75,14 @@ window.cw-window {
 .cw-root button.cw-icon.cw-plain { background-color: transparent; }
 .cw-root button.cw-icon.cw-plain:hover { background-color: rgba(255, 255, 255, 0.12); }
 .cw-root button.cw-icon.cw-big { padding: 9px; }
+.cw-root button.cw-icon.cw-mini { padding: 3px; }
+.cw-root button.cw-icon:disabled, .cw-root button.cw-icon.cw-faded { opacity: 0.38; }
+.cw-tnum { font-feature-settings: "tnum"; }
+.cw-picker { margin-top: 10px; }
+.cw-forecast { margin-top: 6px; }
+.cw-root button.cw-disclosure { background-color: transparent; border: none; box-shadow: none; padding: 1px 6px; border-radius: 8px; }
+.cw-root button.cw-disclosure:hover { background-color: rgba(255, 255, 255, 0.08); }
+.cw-light button.cw-disclosure:hover { background-color: rgba(0, 0, 0, 0.05); }
 
 .cw-root button.cw-chip {
   background-color: rgba(255, 255, 255, 0.1);
@@ -146,6 +154,11 @@ window.cw-window {
 /* ── settings window ───────────────────────────────── */
 .cw-settings-title { font-size: 17px; font-weight: 700; }
 .cw-setting-label { font-size: 13px; font-weight: 500; }
+.cw-warn { color: #ff9f0a; }
+.cw-layout-zone { background-color: rgba(255, 255, 255, 0.04); border-radius: 12px; padding: 4px; }
+.cw-layout-zone.cw-drop { background-color: rgba(10, 132, 255, 0.2); }
+.cw-layout-row { padding: 3px 6px; border-radius: 8px; }
+.cw-layout-row.cw-off .cw-layout-text, .cw-layout-row.cw-off image { opacity: 0.45; }
 .cw-badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 .cw-badge.yours { background-color: rgba(10, 132, 255, 0.28); color: #a8d1ff; }
 .cw-badge.machine { background-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.62); }
@@ -271,6 +284,9 @@ window.cw-window {
 .cw-light button.cw-row:hover { background-color: rgba(0, 0, 0, 0.06); }
 .cw-light button.cw-row.active { background-color: rgba(0, 122, 255, 0.22); }
 
+.cw-light .cw-layout-zone { background-color: rgba(0, 0, 0, 0.04); }
+.cw-light .cw-layout-zone.cw-drop { background-color: rgba(0, 122, 255, 0.16); }
+.cw-light .cw-warn { color: #c25e00; }
 .cw-light .cw-badge.yours { background-color: rgba(0, 122, 255, 0.16); color: #0060d0; }
 .cw-light .cw-badge.machine { background-color: rgba(0, 0, 0, 0.07); color: rgba(0, 0, 0, 0.55); }
 .cw-light button.cw-nav label { color: rgba(0, 0, 0, 0.65); }
