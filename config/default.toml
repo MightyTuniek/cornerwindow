@@ -247,10 +247,15 @@ sustain = 60
 cooldown = 1800               # seconds before the same alert repeats
 
 [agents]
-# Claude Code and Codex usage from their local logs. Switch the card on under Settings → Features.
+# Coding agents' usage from their local logs: Claude Code, Codex, OpenCode, Gemini CLI, Copilot CLI,
+# Amp, pi, Goose and more. Switch the card on under Settings → Features. `cornerwindow agent ...`
+# from an agent's hooks says exactly when it works or waits for you (see the README).
 interval = 10                 # seconds, while the panel is open
 window_budget = 0             # tokens you get per 5-hour window, for the meter (0 = show the time left instead)
-trigger_dot = true            # purple dot on the corner while an agent is working
+trigger_dot = true            # purple dot on the corner while an agent works or waits for you
+hide = []                     # agents to leave out, by id or name, e.g. ["gemini", "Oh My Pi"]
+herdr = true                  # ask herdr (if it runs) which of its agents work or wait for you
+processes = true              # find agents with no usable logs (Cursor CLI, Aider, Kiro, Crush...) by their process
 
 [power]
 # The buttons, both on the Power card and behind the clock's power button.

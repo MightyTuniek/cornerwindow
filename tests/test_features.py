@@ -1,5 +1,5 @@
 """The pure logic behind the newer cards and tools: notifications, downloads, calendar, window
-layouts, snippets, alerts, processes and ports, updates, agent usage, capture, battery, toggles."""
+layouts, snippets, alerts, processes and ports, updates, capture, battery, toggles."""
 
 from __future__ import annotations
 
@@ -244,66 +244,6 @@ def test_update_parsers():
     found = Updates(system=12, security=3, flatpak=2)
     assert found.total == 14 and found.summary() == "12 system (3 security) · 2 Flatpak"
     assert Updates().summary() == "Up to date"
-
-
-# -- coding agents -------------------------------------------------------------------------
-def test_claude_usage_dedupes_streamed_records():
-    from cornerwindow.platform.agents import current_window, parse_claude
-
-    def record(mid, ts, out=10):
-        return json.dumps({"type": "assistant", "timestamp": ts, "requestId": "r" + mid,
-                           "message": {"id": mid, "model": "claude-opus-5-5",
-                                       "usage": {"input_tokens": 5, "output_tokens": out,
-                                                 "cache_read_input_tokens": 1000,
-                                                 "cache_creation_input_tokens": 100}}})
-
-    lines = [record("a", "2026-11-23T09:10:00Z"), record("a", "2026-11-23T09:10:01Z"),  # the same message twice
-             record("b", "2026-11-23T10:00:00Z", 50), "not json", json.dumps({"type": "user"})]
-    usages = parse_claude(lines)
-    assert [u.tokens for u in usages] == [115, 155]  # input + output + cache writes; reads don't count
-    now = dt.datetime(2026, 11, 23, 11, 0, tzinfo=UTC)
-    assert current_window([u.at for u in usages], now) == (dt.datetime(2026, 11, 23, 9, 0, tzinfo=UTC),
-                                                           dt.datetime(2026, 11, 23, 14, 0, tzinfo=UTC))
-    assert current_window([u.at for u in usages], now + dt.timedelta(hours=4)) is None  # window over
-    # a message after the window ended starts the next one
-    times = [dt.datetime(2026, 11, 23, 9, 10, tzinfo=UTC), dt.datetime(2026, 11, 23, 15, 30, tzinfo=UTC)]
-    assert current_window(times, dt.datetime(2026, 11, 23, 16, 0, tzinfo=UTC))[0].hour == 15
-
-
-def test_codex_usage_and_limits():
-    from cornerwindow.platform.agents import parse_codex
-
-    line = json.dumps({"timestamp": "2026-11-23T10:00:00Z", "type": "event_msg", "payload": {
-        "type": "token_count",
-        "info": {"last_token_usage": {"input_tokens": 1200, "cached_input_tokens": 200, "output_tokens": 300}},
-        "rate_limits": {"primary": {"used_percent": 42.0, "window_minutes": 300, "resets_in_seconds": 3600},
-                        "secondary": {"used_percent": 10.0, "window_minutes": 10080}}}})
-    usages, limits = parse_codex([line, "{}"])
-    assert usages[0].tokens == 1300 and usages[0].cache_read == 200
-    assert [(l.used_percent, l.window_minutes) for l in limits] == [(42.0, 300), (10.0, 10080)]
-    assert limits[0].resets_at == dt.datetime(2026, 11, 23, 11, 0, tzinfo=UTC)
-
-
-def test_agent_logs_read_incrementally(tmp_path):
-    from cornerwindow.platform.agents import AgentUsage
-
-    project = tmp_path / ".claude/projects/-home-me-app"
-    project.mkdir(parents=True)
-    log = project / "s.jsonl"
-    now = dt.datetime.now(UTC)
-
-    def record(mid):
-        return json.dumps({"type": "assistant", "timestamp": now.isoformat(), "requestId": mid,
-                           "message": {"id": mid, "model": "claude-sonnet-5-5", "usage": {"input_tokens": 1,
-                                                                                           "output_tokens": 9}}})
-
-    log.write_text(record("1") + "\n" + record("2")[:20])  # a half-written last line waits
-    usage = AgentUsage(home=tmp_path)
-    (summary,) = usage.summaries(now.astimezone())
-    assert summary.today_messages == 1 and summary.models == ["Sonnet 5.5"] and summary.working == ["app"]
-    log.write_text(record("1") + "\n" + record("2") + "\n")
-    (summary,) = usage.summaries(now.astimezone())
-    assert summary.today_messages == 2 and summary.today_tokens == 20
 
 
 # -- capture -------------------------------------------------------------------------------

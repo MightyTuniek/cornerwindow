@@ -157,7 +157,9 @@ src/cornerwindow/
     capture.py      screenshots, colour picker (xdg-desktop-portal first), OCR and QR via tesseract/zbarimg
     processes.py    /proc: busiest processes, listening ports, stopping a process
     updates.py      apt / dnf / pacman / Flatpak / Snap update counts
-    agents.py       Claude Code and Codex usage from their local logs
+    agents.py       coding agents' usage: one Source class per agent (where its logs are, how to read them
+                    incrementally), hook reports, herdr, process detection
+    agent_formats.py  each agent's log format as pure parsers (checked against ccusage's adapters)
     backdrop/       what's behind our windows, for Liquid Glass (live X11 compositing, wallpaper)
     clipboard.py    clipboard access
   native/           glass.c, the Liquid Glass pixel kernel (built with cc on first use)

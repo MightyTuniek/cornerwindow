@@ -40,6 +40,8 @@ usage: cornerwindow [command]
   actions                  list named actions
   settings [PAGE]          open the settings window (e.g. `settings display`)
   reload                   re-read the config files
+  agent working|waiting|done|idle [--agent NAME] [--project DIR]
+                           what a coding agent is doing (for its hooks; never starts CornerWindow)
   taskbar show|hide|status the desktop's taskbar (experimental; `show` also works when not running)
   quit                     stop the running instance
   snapshot FILE.png [panel|window]   save what the panel shows (opens it; PNG, offscreen)
@@ -68,6 +70,10 @@ class CornerWindowApp(Gtk.Application):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", lambda *_a, h=handler: h())
             self.add_action(action)
+        # `cornerwindow agent ...` from coding agents' hooks (sent without starting GTK, see __main__)
+        report = Gio.SimpleAction.new("agent-report", GLib.VariantType.new("s"))
+        report.connect("activate", lambda _a, value: self._agent_report(value.get_string()))
+        self.add_action(report)
 
     # -- construction ---------------------------------------------------------------------
     def _build(self) -> None:
@@ -382,6 +388,21 @@ class CornerWindowApp(Gtk.Application):
         if output:
             command_line.print_literal(output + "\n")
         return status
+
+    def _agent_report(self, text: str) -> None:
+        from .platform.agents import REPORTS, STATES
+
+        try:
+            report = json.loads(text)
+            state = STATES[str(report["state"])]
+        except (ValueError, KeyError, TypeError):
+            _log.debug("Bad agent report %r", text)
+            return
+        REPORTS.update(str(report.get("agent") or "agent"), state, str(report.get("project") or ""))
+        host = getattr(self, "host", None)
+        module = host.instances.get("agents") if host is not None else None
+        if module is not None and hasattr(module, "reported"):
+            module.reported()
 
     def _dispatch(self, args: list[str]) -> tuple[str, int]:
         island = self.island

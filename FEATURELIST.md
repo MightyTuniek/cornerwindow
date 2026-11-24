@@ -25,7 +25,7 @@ The cards inside the open panel. The id is what goes in `[modules]` in the confi
 | Shelf | `shelf` | Park files, text and links (inside the drawer): drop them on the corner or the tab, drag them out later |
 | Power | `power` | Lock, sleep, log out, restart, shut down, each with press-and-hold to confirm; off by default (the clock's power button has the same buttons) |
 | Weather | `weather` | Now, next hours and next days from Open-Meteo; off by default, pick a city in Settings → Weather |
-| AI agents | `agents` | Claude Code and Codex from their local logs: tokens today, the current 5-hour window and its reset, plan limits, models, which project an agent works in; purple dot while one works; off by default |
+| AI agents | `agents` | About twenty coding agents (Claude Code, Codex, OpenCode, Kilo, Gemini CLI, Qwen, Antigravity, Copilot CLI, Amp, Droid, pi, Oh My Pi, OpenClaw, Grok Build, Kimi, Goose, Hermes, Cline, Codebuff, ZCode, DeepSeek Harness) from their local logs, plus Cursor CLI, Aider, Kiro, Auggie, Crush, Continue, OpenHands, Mistral Vibe, Junie and Plandex by their running process: tokens and recorded cost today, Claude's 5-hour window, Codex's plan limits, models, which project an agent works or waits in (hooks via `cornerwindow agent ...`, herdr, recent logs or a busy process); `hide` leaves agents out; purple dot while one works; off by default |
 
 ## Tools
 

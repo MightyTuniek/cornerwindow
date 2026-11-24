@@ -123,6 +123,17 @@ def agent_logs(home: Path) -> None:
                                                        "cache_read_input_tokens": 60000,
                                                        "cache_creation_input_tokens": 2500}}}))
     (folder / "demo-session.jsonl").write_text("\n".join(lines) + "\n")
+    # and an afternoon of Oh My Pi, which records what each reply cost
+    folder = home / ".omp" / "agent" / "sessions" / "-home-demo-website"
+    folder.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for i in range(18):
+        at = now - dt.timedelta(minutes=50 - i * 2)
+        lines.append(json.dumps({"type": "message", "id": f"p{i}", "timestamp": at.isoformat(),
+                                 "message": {"role": "assistant", "model": "gpt-6.2",
+                                             "usage": {"input": 3000 + i * 40, "output": 400, "cacheRead": 9000,
+                                                       "cacheWrite": 0, "cost": {"total": 0.011 + i * 0.001}}}}))
+    (folder / "demo-session.jsonl").write_text("\n".join(lines) + "\n")
 
 
 # -- fakes ---------------------------------------------------------------------------------

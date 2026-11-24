@@ -53,7 +53,7 @@ The trigger stays almost invisible.
 | Drawer | Timer, stopwatch with laps, clipboard history (text, images, pins), scratchpad, and the Shelf |
 | Command bar | Type to open apps, switch windows, run commands, calculate, convert, and everything in the tools below |
 | Apps | Your favourite and running apps, a taskbar inside the panel (shown while the taskbar is hidden, see below) |
-| Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code and Codex: tokens today, the 5-hour window and when it resets, plan limits, which project an agent is working in, from their local logs), **Power** (a card instead of the clock's button) |
+| Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code, Codex, OpenCode, Gemini CLI, Qwen Code, Copilot CLI, Amp, Droid, pi, Oh My Pi, Grok Build, Kimi, Goose, Cline, Kilo, Hermes and more: tokens and recorded cost today, Claude's 5-hour window, Codex's plan limits, which project an agent works in or waits for you in, from their local logs, their hooks and herdr; Cursor CLI, Aider, Kiro, Auggie, Crush and others without usable logs are found by their running process), **Power** (a card instead of the clock's button) |
 
 **More cards than fit.** A column taller than the screen scrolls on its own (the command bar stays put) and fades out at the end that has more; sliders and the calendar keep using the scroll wheel for themselves. The Features page warns about a column that scrolls, and a card you switch on goes to the column with the most room.
 
@@ -166,6 +166,7 @@ cornerwindow actions                       # list bindable actions
 cornerwindow action display.preset.night
 cornerwindow settings display              # open the settings window, optionally on a page
 cornerwindow taskbar show                  # bring the taskbar back (also when CornerWindow isn't running)
+cornerwindow agent waiting --agent claude  # tell the AI agents card (for hooks, see below)
 cornerwindow action window.snap.left       # bind actions like this one to keyboard shortcuts
 cornerwindow snapshot ~/panel.png          # a picture of the open panel (drawn offscreen)
 CORNERWINDOW_DEMO=1 cornerwindow           # try it with made-up data (its own instance and settings)
@@ -176,6 +177,23 @@ For the fastest possible hotkey, bind the D-Bus call directly. This is what `./i
 ```bash
 gdbus call --session --dest io.github.cornerwindow --object-path /io/github/cornerwindow --method org.gtk.Actions.Activate toggle [] {}
 ```
+
+### Coding agents' hooks
+
+The AI agents card guesses that an agent is working when its log was written in the last 90 seconds (or, for agents it only knows by their process, while the process uses the CPU), and asks [herdr](https://github.com/herdrdev/herdr) when it runs. An agent's own hooks can say it exactly, including when it waits for you: `cornerwindow agent working|waiting|done|idle [--agent NAME] [--project DIR]` (the project defaults to the folder the hook runs in). It returns at once, never starts CornerWindow, and does nothing when it isn't running. Any agent name works; unknown ones get their own row. For Claude Code, in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "cornerwindow agent working --agent claude"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "cornerwindow agent working --agent claude"}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "cornerwindow agent waiting --agent claude"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "cornerwindow agent done --agent claude"}]}]
+  }
+}
+```
+
+For Codex, in `~/.codex/config.toml`: `notify = ["cornerwindow", "agent", "done", "--agent", "codex"]`. Agents you don't want on the card go in `[agents] hide`; `herdr = false` and `processes = false` switch those off.
 
 ## Configuration
 

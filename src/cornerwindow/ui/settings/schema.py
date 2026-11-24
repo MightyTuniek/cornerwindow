@@ -274,8 +274,13 @@ SECTIONS: list[Section] = [
         F("interval", "Refresh every", "int", "While the panel is open.", min=2, max=120, unit="s"),
         F("window_budget", "Tokens per 5-hour window", "int", "For the meter. 0 = show the time left instead.",
           max=100_000_000, step=100_000),
-        F("trigger_dot", "Dot on the corner while an agent works", "bool"),
-    ], "Claude Code and Codex, read from their logs on this PC."),
+        F("trigger_dot", "Dot on the corner while an agent works", "bool", "Or waits for you."),
+        F("hide", "Leave out", "list", "Agents by id or name: claude, codex, opencode, gemini, copilot, amp, "
+          "droid, pi, omp, grok, kimi, goose, cline, cursor, aider…"),
+        F("herdr", "Ask herdr", "bool", "Which of herdr's agents work or wait for you, while herdr runs."),
+        F("processes", "Find agents by their process", "bool",
+          "For agents without usable logs (Cursor CLI, Aider, Kiro, Crush…): open, and working while busy."),
+    ], "Claude Code, Codex, OpenCode, Gemini CLI and about twenty more, read from their logs on this PC."),
     Section("weather", "Weather", "weather", [
         F("place", "City", "place_search", "Looked up on Open-Meteo when you press Find.",
           keys=("place", "latitude", "longitude")),

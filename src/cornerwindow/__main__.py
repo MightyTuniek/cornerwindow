@@ -24,6 +24,9 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
+    if command == "agent":
+        return _agent(argv[2:])
+
     if command == "taskbar" and not _instance_running():
         # the escape hatch: bring the taskbar back even when CornerWindow isn't running
         from .platform.desktop.taskbar import Taskbar, command
@@ -46,6 +49,34 @@ def main(argv: list[str] | None = None) -> int:
     from .app import CornerWindowApp
 
     return CornerWindowApp().run(argv)
+
+
+def _agent(args: list[str]) -> int:
+    """`cornerwindow agent working|waiting|done|idle`, called from coding agents' hooks. Hooks run
+    often, so this never starts the panel and never loads GTK, and it only fails on bad arguments."""
+    import json
+
+    from .platform.agents import parse_report
+
+    try:
+        report = parse_report(args, os.getcwd())
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    from gi.repository import GLib
+
+    from . import APP_ID, demo
+    from .platform import dbus
+
+    app_id = f"{APP_ID}.Demo" if demo.enabled() else APP_ID
+    try:
+        bus = dbus.session()
+        if dbus.name_has_owner(bus, app_id):
+            dbus.call(bus, app_id, "/" + app_id.replace(".", "/"), "org.gtk.Actions", "Activate",
+                      GLib.Variant("(sava{sv})", ("agent-report", [GLib.Variant("s", json.dumps(report))], {})))
+    except Exception:  # not running, or no session bus: nothing to tell
+        pass
+    return 0
 
 
 def _instance_running() -> bool:

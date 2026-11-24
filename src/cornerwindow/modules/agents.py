@@ -1,6 +1,8 @@
-"""AI agents: Claude Code and Codex usage today, the current 5-hour window and when it resets,
-plan limits where the tool logs them, and which projects have an agent working right now.
-Read from their local logs only. Hidden when neither tool is installed; off by default."""
+"""AI agents: usage today for every coding agent with local logs (Claude Code, Codex, OpenCode,
+Gemini CLI, Copilot CLI, Amp, pi, Goose and more, see platform/agents.py), cost where the tool
+records it, Claude's 5-hour window, Codex's plan limits, and which projects have an agent working
+or waiting for you (from the agents' own hooks, herdr, or recently written logs).
+Read from local files only. Hidden when no such tool is installed; off by default."""
 
 from __future__ import annotations
 
@@ -9,18 +11,22 @@ import datetime as dt
 from gi.repository import Gtk
 
 from ..core.activity import PURPLE
-from ..platform.agents import AgentUsage, human_tokens
+from ..platform.agents import REPORTS, AgentUsage, human_cost, human_tokens
 from ..ui.draw import pill
 from ..ui.widgets import Card, label
 from .base import Command, Module, module
 
 
 @module("agents", title="AI agents", icon="agent",
-        description="Claude Code and Codex: tokens today, the 5-hour window, limits, who's working")
+        description="Claude Code, Codex, OpenCode, Gemini and more: tokens and cost today, limits, who's working")
 class Agents(Module):
     def setup(self) -> None:
         self.usage = AgentUsage()
         self.latest = []
+
+    def configure(self) -> None:
+        self.usage.configure(hide=self.config.get("hide", []), herdr=bool(self.config.get("herdr", True)),
+                             processes=bool(self.config.get("processes", True)))
 
     def available(self) -> bool:
         return self.usage.available()
@@ -35,13 +41,23 @@ class Agents(Module):
     def refresh(self) -> None:
         self.ctx.run_async(self.usage.summaries, self._show)
 
-    def _show(self, summaries) -> None:
-        self.latest = summaries
-        working = any(s.working for s in summaries)
-        if working and self.config.get("trigger_dot", True):
+    def reported(self) -> None:
+        """An agent's hook said what it's doing: update the dot now, even with the panel shut."""
+        self._dot(self.latest)
+        if hasattr(self, "rows") and self.rows.get_mapped():
+            self.refresh()
+
+    def _dot(self, summaries) -> None:
+        busy = any(s.working or s.waiting for s in summaries) or \
+            any(r.state in ("working", "waiting") for r in REPORTS.current())
+        if busy and self.config.get("trigger_dot", True):
             self.ctx.activity.show("agents", dot=True, color=PURPLE, persistent=True, priority=0)
         else:
             self.ctx.activity.clear("agents")
+
+    def _show(self, summaries) -> None:
+        self.latest = summaries
+        self._dot(summaries)
         if not hasattr(self, "rows"):
             return
         for child in self.rows.get_children():
@@ -60,12 +76,18 @@ class Agents(Module):
         head.pack_start(label(s.name, "cw-strong cw-small"), False, False, 0)
         if s.models:
             head.pack_start(label(" · ".join(s.models), "cw-dim cw-small", ellipsize=True), True, True, 0)
-        state = f"Working in {', '.join(s.working)}" if s.working else ""
+        state = f"Waiting for you in {_places(s.waiting)}" if s.waiting else \
+            f"Working in {_places(s.working)}" if s.working else f"Done in {_places(s.done)}" if s.done else \
+            f"Open in {_places(s.running)}" if s.running else ""
         if state:
-            head.pack_end(label(state, "cw-agent-working cw-small"), False, False, 0)
+            head.pack_end(label(state, "cw-dim cw-small" if not (s.waiting or s.working) else "cw-agent-working cw-small"),
+                          False, False, 0)
         box.pack_start(head, False, False, 0)
-        today = f"{human_tokens(s.today_tokens)} tokens today · {s.today_messages} replies"
-        box.pack_start(label(today, "cw-dim cw-small"), False, False, 0)
+        if s.today_messages:
+            today = f"{human_tokens(s.today_tokens)} tokens today · {s.today_messages} replies"
+            if s.today_cost:
+                today += f" · {human_cost(s.today_cost)}"
+            box.pack_start(label(today, "cw-dim cw-small"), False, False, 0)
         for limit in s.limits:
             hours = limit.window_minutes / 60 if limit.window_minutes else 0
             name = f"{hours:.0f}-hour limit" if hours and hours < 48 else "Weekly limit" if hours else "Limit"
@@ -87,9 +109,16 @@ class Agents(Module):
             if not self.latest:
                 self.refresh()
                 return "No agent activity today"
-            return " · ".join(f"{s.name}: {human_tokens(s.today_tokens)} today" for s in self.latest)
+            return " · ".join(f"{s.name}: {human_tokens(s.today_tokens)} today"
+                              + (f" ({human_cost(s.today_cost)})" if s.today_cost else "") for s in self.latest)
 
         return [Command(("agents", "usage"), "AI agent usage today", "agents", run)]
+
+
+def _places(projects: list[str]) -> str:
+    """Two project names at most, so the line fits: 'app, site +2'."""
+    more = f" +{len(projects) - 2}" if len(projects) > 2 else ""
+    return ", ".join(projects[:2]) + more
 
 
 def _meter(text: str, fraction: float) -> Gtk.Widget:
