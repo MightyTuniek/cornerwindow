@@ -5,10 +5,13 @@
     pixels = track.capture((x, y, w, h))  # root coordinates, device pixels
     track.untrack()
 
-`capture` returns (address, width, height, stride, origin_x, origin_y, generation):
-ARGB32 pixels of a rectangle containing the one asked for. `generation` changes
-whenever the pixels did. `on_dirty` is called when something under `area_fn()`
-changed. Sources:
+`capture(rect, refresh=True, sharp=True)` returns
+(address, width, height, stride, origin_x, origin_y, generation, small): ARGB32
+pixels of a rectangle containing the one asked for. `generation` changes whenever
+the pixels did. `small` is None, or (address, w, h, stride) of a quarter-size,
+4x4-averaged copy; with sharp=False a source may return only that, and then
+`address` and `stride` are 0 (frosted glass never reads the sharp pixels).
+`on_dirty` is called when something under `area_fn()` changed. Sources:
 
   x11        live: windows below ours composited over the wallpaper (X11 + Composite)
   wallpaper  static: just the wallpaper (Wayland, no compositor, or X11 failure)

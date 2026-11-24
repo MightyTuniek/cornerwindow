@@ -7,7 +7,8 @@ libm, so all it needs is a C compiler (`cc`). It is built into
 `install.sh` builds it ahead of time. Without a compiler, `available()` is False
 and the glass theme hides itself.
 
-ctypes releases the GIL while the kernel runs.
+ctypes releases the GIL while the kernel runs; the blur also splits itself over a few
+POSIX threads.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from ..core import log
 
 _log = log.get("native")
 SOURCE = Path(__file__).with_name("glass.c")
-ABI = 4
+ABI = 6
 
 _lock = threading.Lock()
 _lib: ctypes.CDLL | None = None
@@ -54,7 +55,7 @@ class Params(ctypes.Structure):
         ("rim", _f), ("rim_ambient", _f), ("rim_opposite", _f), ("rim_glow", _f),
         ("shade", _f),
         ("press_x", _f), ("press_y", _f), ("press_r", _f), ("press_a", _f),
-        ("skip_interior", _i),
+        ("lo_tinted", _p),
     ]
 
 
@@ -85,7 +86,8 @@ def build(force: bool = False) -> Path:
         raise RuntimeError("no C compiler found (install gcc or clang)")
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(f".{os.getpid()}.tmp")
-    base = [cc, "-O3", "-ffast-math", "-fPIC", "-shared", "-std=c99", str(SOURCE), "-o", str(tmp), "-lm"]
+    base = [cc, "-O3", "-ffast-math", "-fPIC", "-shared", "-std=c99", "-pthread", str(SOURCE), "-o", str(tmp),
+            "-lm"]
     last = ""
     for extra in (["-march=native"], []):
         result = subprocess.run(base[:1] + extra + base[1:], capture_output=True, text=True)
@@ -114,7 +116,7 @@ def load() -> ctypes.CDLL | None:
                 lib = ctypes.CDLL(str(build(force=True)))
             lib.cw_edge_field.argtypes = [ctypes.POINTER(Seg), _i, _i, _i, _f, _p, _p, _p]
             lib.cw_edge_field.restype = None
-            lib.cw_prepare_backdrop.argtypes = [_p, _i, _i, _i, _i, _i, _p, _i, _i, _i]
+            lib.cw_prepare_backdrop.argtypes = [_p, _i, _i, _i, _i, _i, _p, _i, _i, _i, _i]
             lib.cw_prepare_backdrop.restype = _i
             lib.cw_shade.argtypes = [ctypes.POINTER(Params), _p]
             lib.cw_shade.restype = None
@@ -122,6 +124,8 @@ def load() -> ctypes.CDLL | None:
             lib.cw_shade_rows.restype = None
             lib.cw_tint_lo.argtypes = [ctypes.POINTER(Params), _p]
             lib.cw_tint_lo.restype = None
+            lib.cw_tint_lo_rows.argtypes = [ctypes.POINTER(Params), _p, _i, _i, _i]
+            lib.cw_tint_lo_rows.restype = None
             lib.cw_luma.argtypes = [_p, _i, _i, _i]
             lib.cw_luma.restype = ctypes.c_double
             _lib = lib

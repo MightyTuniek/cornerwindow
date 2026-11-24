@@ -143,7 +143,7 @@ def test_edge_field_distance_and_normal():
     # one vertical edge at x = 10, outward normal +x
     dist, nx, ny = _field([(10.0, 0.0, 10.0, 20.0, 1.0, 0.0, 1.0, 0.0)], 20, 20, 6.0)
     i = 10 * 20 + 7  # pixel centre (7.5, 10.5): 2.5 px from the edge
-    assert dist[i] == pytest.approx(2.5, abs=1e-4)
+    assert dist[i] == pytest.approx(2.5 ** 2, abs=1e-4)  # squared: the kernel roots only the rim
     assert (nx[i], ny[i]) == (pytest.approx(1.0), pytest.approx(0.0))
     assert dist[10 * 20 + 1] > 1e20  # beyond the bezel: untouched
 

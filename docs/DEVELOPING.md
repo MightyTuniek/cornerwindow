@@ -102,14 +102,15 @@ When editing `style.css` by search-and-replace, make sure the text you match occ
 
 ### Liquid Glass internals
 
-- [`native/glass.c`](../src/cornerwindow/native/glass.c) is the per-pixel kernel: libc and libm only, built by [`native/__init__.py`](../src/cornerwindow/native/__init__.py) into `~/.cache/cornerwindow/glass-<hash>.so` and loaded with ctypes. Its entry points:
-  - `cw_edge_field`: distance to the visible edges and smooth normals.
-  - `cw_prepare_backdrop`: quarter-resolution blur.
-  - `cw_shade`: lens, dispersion, tint, specular, press glow.
+- [`native/glass.c`](../src/cornerwindow/native/glass.c) is the per-pixel kernel: libc, libm and POSIX threads only, built by [`native/__init__.py`](../src/cornerwindow/native/__init__.py) into `~/.cache/cornerwindow/glass-<hash>.so` and loaded with ctypes. Its entry points:
+  - `cw_edge_field`: squared distance to the visible edges and normals (normalised by `cw_shade`, rim only).
+  - `cw_prepare_backdrop`: quarter-resolution blur, split over a few threads.
+  - `cw_tint_lo` / `cw_tint_lo_rows`: vibrancy and tint of that blur, which is all frosted glass's middle is.
+  - `cw_shade` / `cw_shade_rows`: lens, dispersion, tint, specular, press glow on the rim; the flat middle is the tinted blur upsampled in fixed point (or the backdrop 1:1 for clear glass).
 
   Bump `ABI` in both files when you change `cw_params`.
 - [`platform/backdrop/`](../src/cornerwindow/platform/backdrop) supplies what is behind a window:
-  - `x11.py` composites the windows below ours over the wallpaper, live, using a private Xlib connection and ctypes.
+  - `x11.py` composites the windows below ours over the wallpaper, live, using a private Xlib connection and ctypes. For frosted glass (`capture(..., sharp=False)`) the X server also shrinks the result to a quarter (two bilinear 2× XRender steps, exactly a 4×4 average), and only that is read back; clear glass still reads the full-size pixels.
   - `wallpaper.py` is the static fallback.
 - [`ui/glass.py`](../src/cornerwindow/ui/glass.py) turns any cairo outline into kernel inputs and caches every stage, so a settled panel costs nothing until something behind it changes. While a spring runs, the island renders the glass at half resolution and keeps the backdrop still. It catches up once the panel settles.
 - Set `CORNERWINDOW_GLASS_DEBUG=1` to print the time each stage of a glass frame takes.

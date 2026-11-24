@@ -195,7 +195,7 @@ class _WallTrack:
         self.generation += 1
         self.on_dirty()
 
-    def capture(self, rect: Rect, refresh: bool = True):
+    def capture(self, rect: Rect, refresh: bool = True, sharp: bool = True):
         surface = self.owner.wallpaper.surface()
         if surface is None:
             return None
@@ -204,4 +204,5 @@ class _WallTrack:
         data = surface.get_data()
         base = ctypes.addressof((ctypes.c_char * len(data)).from_buffer(data))
         self._keep = (surface, data)
-        return (base, surface.get_width(), surface.get_height(), surface.get_stride(), 0, 0, self.generation)
+        return (base, surface.get_width(), surface.get_height(), surface.get_stride(), 0, 0, self.generation,
+                None)  # static: the CPU blur runs once, no point shrinking on the server

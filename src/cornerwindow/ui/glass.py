@@ -38,6 +38,15 @@ _DEBUG = bool(os.environ.get("CORNERWINDOW_GLASS_DEBUG"))
 LO_SCALE = 4  # the frosted backdrop is blurred at a quarter of the resolution
 
 
+def _kernel_frost(frost: float) -> float:
+    return clamp(frost * 3.0)  # the blurred backdrop takes over quickly; frost sets the radius
+
+
+def _frosted(frost: float) -> bool:
+    """True when the kernel reads only the blurred backdrop, never the sharp one."""
+    return _kernel_frost(frost) >= 0.999
+
+
 def _executor() -> ThreadPoolExecutor:
     global _pool
     if _pool is None:
@@ -152,6 +161,7 @@ class GlassRenderer:
         self._lo = None
         self._lo_dims = (0, 0, 0)
         self._lo_tinted = None
+        self._tint_key = None
         self._out_key = None
         self._out: cairo.ImageSurface | None = None
         self.last_luma: float | None = None
@@ -199,8 +209,11 @@ class GlassRenderer:
     def _prepare_lo(self, capture, frost: float, need=None) -> None:
         """Blur the backdrop at quarter resolution. `need` (x, y, w, h in capture pixels)
         limits it to what the shape can sample, e.g. just the droplet while collapsed."""
-        base, cw, ch, stride, _x, _y, generation = capture
+        base, cw, ch, stride, _x, _y, generation, small = capture
         radius = max(int(round(frost * 16 / LO_SCALE)), 0)
+        if small is not None:
+            self._blur_small(capture, radius)
+            return
         region = (0, 0, cw, ch)
         if need is not None and need[2] * need[3] < 0.25 * cw * ch:
             margin = (3 * radius + 2) * LO_SCALE
@@ -224,9 +237,26 @@ class GlassRenderer:
         self._lo_origin = (rx, ry)
         lib = native.load()
         lib.cw_prepare_backdrop(base + ry * stride + rx * 4, rw, rh, stride, LO_SCALE, radius,
-                                self._lo, lw, lh, lw * 4)
+                                self._lo, lw, lh, lw * 4, _THREADS)
         self.last_luma = lib.cw_luma(self._lo, lw, lh, lw * 4)
         self._lo_key = ((generation, cw, ch, stride, radius, base), region)
+        self._out_key = None
+
+    def _blur_small(self, capture, radius: int) -> None:
+        """The source already shrank the backdrop to a quarter (on the X server): only
+        the blur is left, and it covers the whole capture."""
+        _base, cw, ch, _stride, _x, _y, generation, (addr, lw, lh, lstride) = capture
+        key = ((generation, cw, ch, "small", radius, addr), (0, 0, cw, ch))
+        if key == self._lo_key:
+            return
+        if self._lo is None or len(self._lo) < lw * lh:
+            self._lo = (ctypes.c_uint32 * int(lw * lh * 1.3 + 16))()
+        self._lo_dims = (lw, lh, lw * 4)
+        self._lo_origin = (0, 0)
+        lib = native.load()
+        lib.cw_prepare_backdrop(addr, lw, lh, lstride, 1, radius, self._lo, lw, lh, lw * 4, _THREADS)
+        self.last_luma = lib.cw_luma(self._lo, lw, lh, lw * 4)
+        self._lo_key = key
         self._out_key = None
 
     def prefetch(self, rect, frost: float) -> None:
@@ -234,40 +264,30 @@ class GlassRenderer:
         so the first frame of opening doesn't pay for it."""
         if self.track is None or native.load() is None:
             return
-        capture = self.track.capture(rect)
+        capture = self.track.capture(rect, sharp=not _frosted(clamp(frost)))
         if capture is not None:
             self._prepare_lo(capture, clamp(frost))
 
-    def _paint_interior(self, lib, p, out: cairo.ImageSurface, res: float) -> None:
-        """Frosted glass's flat middle is the tinted, blurred backdrop scaled up: cairo's
-        bilinear scaler does that several times faster than per-pixel C, so the kernel
-        only shades the rim."""
-        lw, lh, lstride = self._lo_dims
-        if (self._lo_tinted is None or (self._lo_tinted.get_width(), self._lo_tinted.get_height()) != (lw, lh)
-                or self._lo_tinted.get_stride() != lstride):
-            self._lo_tinted = cairo.ImageSurface(cairo.FORMAT_RGB24, lw, lh)
-            if self._lo_tinted.get_stride() != lstride:
-                self._lo_tinted = None
-                return
-        tinted = self._lo_tinted
-        tinted.flush()
-        data = tinted.get_data()
-        lib.cw_tint_lo(ctypes.byref(p), ctypes.addressof((ctypes.c_char * len(data)).from_buffer(data)))
-        tinted.mark_dirty()
-        cr = cairo.Context(out)
-        cr.scale(1.0 / res, 1.0 / res)  # output pixels
-        cr.set_operator(cairo.OPERATOR_SOURCE)
-        cr.scale(1.0 / p.src_step, 1.0 / p.src_step)  # backdrop pixels
-        cr.translate(p.lo_x - p.src_ox, p.lo_y - p.src_oy)
-        cr.scale(p.lo_scale, p.lo_scale)
-        cr.set_source_surface(tinted, 0, 0)
-        pattern = cr.get_source()
-        pattern.set_filter(cairo.FILTER_BILINEAR)
-        pattern.set_extend(cairo.EXTEND_PAD)
-        cr.paint()
-        del cr
-        out.flush()
-        p.skip_interior = 1
+    def _tint_interior(self, lib, p) -> None:
+        """Frosted glass's flat middle is the tinted, blurred backdrop scaled up: tint the
+        small blur once here, and the kernel upsamples it in fixed point (threaded)
+        while it shades the rim."""
+        lw, lh, _lstride = self._lo_dims
+        if self._lo_tinted is None or len(self._lo_tinted) < len(self._lo):
+            self._lo_tinted = (ctypes.c_uint32 * len(self._lo))()
+            self._tint_key = None
+        key = (self._lo_key, p.saturation, p.brightness, p.tint_r, p.tint_g, p.tint_b, p.tint_a)
+        if key != self._tint_key:  # a press or the strength ramp alone doesn't change it
+            if _THREADS > 1 and lh >= 64:
+                ref = ctypes.byref(p)
+                jobs = [_executor().submit(lib.cw_tint_lo_rows, ref, self._lo_tinted, t, lh, _THREADS)
+                        for t in range(_THREADS)]
+                for job in jobs:
+                    job.result()
+            else:
+                lib.cw_tint_lo(ctypes.byref(p), self._lo_tinted)
+            self._tint_key = key
+        p.lo_tinted = ctypes.addressof(self._lo_tinted)
 
     # -- render ---------------------------------------------------------------------------
     def render(self, *, path_fn: Callable, shape_key, bbox, origin: tuple[int, int], scale: int,
@@ -295,15 +315,15 @@ class GlassRenderer:
         t0 = time.perf_counter()
         ox, oy = origin
         want = capture_rect or (ox + bx * scale, oy + by * scale, bw * scale, bh * scale)
-        capture = self.track.capture(want, refresh)
+        frost = clamp(config.frost)
+        capture = self.track.capture(want, refresh, sharp=not _frosted(frost))
         if capture is None:
             return None
         t1 = time.perf_counter()
         look = palette.look
-        frost = clamp(config.frost)
         self._prepare_shape((shape_key, bbox, res, bezel_px), path_fn, bbox, res, screen_edges, bezel_px)
         t2 = time.perf_counter()
-        base, cw, ch, stride, cx, cy, _gen = capture
+        base, cw, ch, stride, cx, cy, _gen, _small = capture
         src_ox, src_oy = ox + bx * scale - cx, oy + by * scale - cy
         self._prepare_lo(capture, frost, (src_ox, src_oy, bw * scale, bh * scale) if local_blur else None)
         t3 = time.perf_counter()
@@ -312,7 +332,9 @@ class GlassRenderer:
         key = (self._shape_key, self._lo_key, palette.name, config, round(strength, 3), round(glow, 3), press_key, res)
         if key == self._out_key and self._out is not None:
             return self._out, bx, by
-        base, cw, ch, stride, cx, cy, _gen = capture
+        base, cw, ch, stride, cx, cy, _gen, small = capture
+        if not base:  # only the quarter-size copy exists; frosted glass never samples src
+            base, cw, ch, stride = small[0], small[1], small[2], small[3]
         if self._out is None or (self._out.get_width(), self._out.get_height()) != (w, h):
             self._out = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
         self._out.set_device_scale(res, res)
@@ -339,7 +361,7 @@ class GlassRenderer:
         p.bezel = bezel_px
         p.disp = bezel_px * 0.85 * config.refraction * strength
         p.dispersion = config.dispersion
-        p.frost = clamp(frost * 3.0)  # blurred backdrop takes over quickly; frost sets the radius
+        p.frost = _kernel_frost(frost)
         p.saturation = 1.0 + (look.saturation - 1.0) * (0.35 + 0.65 * frost)
         p.brightness = look.brightness
         p.tint_r, p.tint_g, p.tint_b = look.tint
@@ -354,8 +376,8 @@ class GlassRenderer:
             p.press_r = 90.0 * res
             p.press_a = 0.22 * press[2]
 
-        if p.frost >= 0.999 and press_key is None:
-            self._paint_interior(lib, p, out, res)
+        if p.frost >= 0.999:
+            self._tint_interior(lib, p)
 
         if _THREADS > 1 and h >= 96:
             ref = ctypes.byref(p)

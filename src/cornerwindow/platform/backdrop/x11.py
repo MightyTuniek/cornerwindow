@@ -14,7 +14,10 @@ what a compositor does, server side:
     alpha undefined (often 0) in an ARGB window they call opaque, and compositing
     that OVER would let the window below show through
   * the result is read back with XShmGetImage (~1 ms) straight into memory the
-    glass kernel reads
+    glass kernel reads. Frosted glass never looks at the sharp pixels, so for it
+    the server also shrinks the result to a quarter (two exact 2x2 averages via
+    bilinear XRender transforms, on the GPU under glamor) and only that, 1/16 of
+    the bytes, is read back
   * XDamage on those windows plus SubstructureNotify on root tell us when
     something under a tracked rectangle changed. Nothing ticks otherwise
 
@@ -78,6 +81,15 @@ class XImage(ctypes.Structure):
                 ("bytes_per_line", c_int), ("bits_per_pixel", c_int), ("red_mask", c_ulong),
                 ("green_mask", c_ulong), ("blue_mask", c_ulong), ("obdata", c_void_p),
                 ("f", XImageFuncs)]
+
+
+class XTransform(ctypes.Structure):
+    _fields_ = [("matrix", c_int * 9)]  # 3x3 XFixed (16.16), row major: source = M * destination
+
+
+def _scale_transform(factor: int) -> XTransform:
+    one = 1 << 16
+    return XTransform((c_int * 9)(factor * one, 0, 0, 0, factor * one, 0, 0, 0, one))
 
 
 class XRenderColor(ctypes.Structure):
@@ -182,6 +194,7 @@ class _Lib:
         proto(x, "XFetchName", c_int, Display, Window, POINTER(c_char_p))
         proto(x, "XSelectInput", c_int, Display, Window, c_long)
         proto(x, "XPending", c_int, Display)
+        proto(x, "XEventsQueued", c_int, Display, c_int)
         proto(x, "XNextEvent", c_int, Display, POINTER(XEvent))
         proto(x, "XFlush", c_int, Display)
         proto(x, "XSync", c_int, Display, c_int)
@@ -217,6 +230,8 @@ class _Lib:
               c_int, c_int, c_uint, c_uint)
         proto(xr, "XRenderComposite", None, Display, c_int, Picture, Picture, Picture,
               c_int, c_int, c_int, c_int, c_int, c_int, c_uint, c_uint)
+        proto(xr, "XRenderSetPictureTransform", None, Display, Picture, POINTER(XTransform))
+        proto(xr, "XRenderSetPictureFilter", None, Display, Picture, c_char_p, POINTER(c_int), c_int)
         proto(xe, "XShmQueryExtension", c_int, Display)
         proto(xe, "XShmCreateImage", POINTER(XImage), Display, c_void_p, c_uint, c_int, c_void_p,
               POINTER(XShmSegmentInfo), c_uint, c_uint)
@@ -259,7 +274,7 @@ class Track:
 
     `area()` returns the root-coordinate rectangle we may ever read (e.g. the
     whole island window); damage outside it is ignored. `capture(rect)` returns
-    the pixels of `rect` (inside `area`) as (address, width, height, stride).
+    the pixels of `rect` (inside `area`); see backdrop/__init__.py for the tuple.
     """
 
     def __init__(self, owner: "X11Backdrop", xid_fn: Callable[[], int], area_fn: Callable[[], Rect | None],
@@ -268,7 +283,8 @@ class Track:
         self.xid_fn = xid_fn
         self.area_fn = area_fn
         self.on_dirty = on_dirty
-        self.dirty = True
+        self.dirty = True     # the pixels we hold are stale
+        self.notified = False  # on_dirty() went out and no capture has happened since
         self.generation = 0
         self.rect: Rect | None = None
         self.pixmap = 0
@@ -277,20 +293,32 @@ class Track:
         self.shm: XShmSegmentInfo | None = None
         self.image = None
         self.fallback = None  # bytes from XGetImage when XShm is unavailable
+        # the quarter-size copy, shrunk by the server (see _shrink)
+        self.half_pixmap = self.half_picture = self.small_pixmap = self.small_picture = 0
+        self.small_alloc = (0, 0)
+        self.small_shm: XShmSegmentInfo | None = None
+        self.small_image = None
+        self.small_fallback = None
+        self.small_dims = (0, 0, 0)  # w, h, stride of the last quarter-size read
+        self.have_sharp = False  # what the last capture read back
+        self.have_small = False
 
     def untrack(self) -> None:
         self.owner._untrack(self)
 
     def invalidate(self) -> None:
-        if not self.dirty:
-            self.dirty = True
+        # Not `if not self.dirty`: damage outside the visible area marks us dirty
+        # silently, and that must not swallow the next damage inside it.
+        self.dirty = True
+        if not self.notified:
+            self.notified = True
             try:
                 self.on_dirty()
             except Exception:
                 _log.exception("Backdrop dirty callback failed")
 
-    def capture(self, rect: Rect, refresh: bool = True):
-        return self.owner._capture(self, rect, refresh)
+    def capture(self, rect: Rect, refresh: bool = True, sharp: bool = True):
+        return self.owner._capture(self, rect, refresh, sharp)
 
 
 class X11Backdrop:
@@ -338,6 +366,7 @@ class X11Backdrop:
         self._event = XEvent()
         channel = GLib.IOChannel.unix_new(x.XConnectionNumber(self.dpy))
         self._watch = GLib.io_add_watch(channel, GLib.PRIORITY_DEFAULT, GLib.IO_IN, self._on_events)
+        self._drain_id = 0
         wallpaper.on_change(self._wallpaper_changed)
         _log.info("Live backdrop: X11 Composite%s", " + XShm" if self.has_shm else "")
 
@@ -370,24 +399,46 @@ class X11Backdrop:
         self._free_track(track)
         if not self.tracks:
             self._drop_layers()
+        self._drain_soon()  # _free_track syncs
+
+    def _free_small(self, track: Track) -> None:
+        lib, dpy = self.lib, self.dpy
+        for picture in (track.half_picture, track.small_picture):
+            if picture:
+                lib.xr.XRenderFreePicture(dpy, picture)
+        for pixmap in (track.half_pixmap, track.small_pixmap):
+            if pixmap:
+                lib.x.XFreePixmap(dpy, pixmap)
+        track.half_pixmap = track.half_picture = track.small_pixmap = track.small_picture = 0
+        self._free_shm(track.small_shm, track.small_image)
+        track.small_shm = track.small_image = track.small_fallback = None
+        track.small_alloc = (0, 0)
+        track.have_small = False
+
+    def _free_shm(self, info, image) -> None:
+        if info is None:
+            return
+        lib, dpy = self.lib, self.dpy
+        lib.xe.XShmDetach(dpy, byref(info))
+        lib.x.XSync(dpy, 0)
+        if image:
+            image.contents.data = None
+            destroy_image(image)
+        lib.libc.shmdt(info.shmaddr)
 
     def _free_track(self, track: Track) -> None:
         lib, dpy = self.lib, self.dpy
+        self._free_small(track)
         if track.picture:
             lib.xr.XRenderFreePicture(dpy, track.picture)
         if track.pixmap:
             lib.x.XFreePixmap(dpy, track.pixmap)
         track.picture = track.pixmap = 0
-        if track.shm is not None:
-            lib.xe.XShmDetach(dpy, byref(track.shm))
-            lib.x.XSync(dpy, 0)
-            if track.image:
-                track.image.contents.data = None
-                destroy_image(track.image)
-            lib.libc.shmdt(track.shm.shmaddr)
+        self._free_shm(track.shm, track.image)
         track.shm = None
         track.image = None
         track.size = (0, 0)
+        track.have_sharp = False
 
     # == stacking ========================================================================
     def _query_order(self) -> None:
@@ -586,7 +637,25 @@ class X11Backdrop:
                     track.invalidate()
                 elif track.rect is not None and any(intersect(track.rect, r) for r in dirty_rects):
                     track.dirty = True  # outside what's shown now: refresh on next use, no redraw
+        # XDamageSubtract is only buffered: send it now. Until the server has it, a
+        # window that keeps redrawing the same area (a video) raises no new damage.
+        x.XFlush(self.dpy)
         return True
+
+    def _drain_soon(self) -> None:
+        """Handle events Xlib already read off the socket during one of our round trips.
+        The fd watch can't see them (the socket is empty), and their damage is never
+        subtracted, so the server stays quiet and the backdrop would freeze."""
+        if self._drain_id or not self.dpy or not self.lib.x.XEventsQueued(self.dpy, 0):  # QueuedAlready
+            return
+
+        def drain() -> bool:
+            self._drain_id = 0
+            if self.dpy:
+                self._on_events()
+            return False
+
+        self._drain_id = GLib.idle_add(drain)
 
     def _own_windows(self) -> set[int]:
         own = set()
@@ -645,27 +714,85 @@ class X11Backdrop:
         track.pixmap = lib.x.XCreatePixmap(dpy, self.root, w, h, 32)
         track.picture = lib.xr.XRenderCreatePicture(dpy, track.pixmap, self.argb, 0, None)
         track.size = (w, h)
-        if self.has_shm:
-            info = XShmSegmentInfo()
-            image = lib.xe.XShmCreateImage(dpy, self.argb_visual, 32, ZPixmap, None, byref(info), w, h)
-            if image:
-                size = image.contents.bytes_per_line * h
-                info.shmid = lib.libc.shmget(IPC_PRIVATE, size, IPC_CREAT | 0o600)
-                if info.shmid >= 0:
-                    info.shmaddr = lib.libc.shmat(info.shmid, None, 0)
-                    image.contents.data = info.shmaddr
-                    info.readOnly = 0
-                    lib.xe.XShmAttach(dpy, byref(info))
-                    lib.x.XSync(dpy, 0)
-                    lib.libc.shmctl(info.shmid, IPC_RMID, None)  # freed once both sides detach
-                    track.shm, track.image = info, image
-                    return True
-                image.contents.data = None
-                destroy_image(image)
+        track.shm, track.image = self._shm_image(w, h)
         return True
 
-    def _capture(self, track: Track, rect: Rect, refresh: bool = True):
-        if track.rect is not None and contains(track.rect, rect) and (not track.dirty or not refresh):
+    def _shm_image(self, w: int, h: int):
+        """(XShmSegmentInfo, XImage) for reading w x h pixels, or (None, None) without XShm."""
+        if not self.has_shm:
+            return None, None
+        lib, dpy = self.lib, self.dpy
+        info = XShmSegmentInfo()
+        image = lib.xe.XShmCreateImage(dpy, self.argb_visual, 32, ZPixmap, None, byref(info), w, h)
+        if not image:
+            return None, None
+        size = image.contents.bytes_per_line * h
+        info.shmid = lib.libc.shmget(IPC_PRIVATE, size, IPC_CREAT | 0o600)
+        if info.shmid < 0:
+            image.contents.data = None
+            destroy_image(image)
+            return None, None
+        info.shmaddr = lib.libc.shmat(info.shmid, None, 0)
+        image.contents.data = info.shmaddr
+        info.readOnly = 0
+        lib.xe.XShmAttach(dpy, byref(info))
+        lib.x.XSync(dpy, 0)
+        lib.libc.shmctl(info.shmid, IPC_RMID, None)  # freed once both sides detach
+        return info, image
+
+    def _ensure_small(self, track: Track) -> bool:
+        """Half- and quarter-size targets for the server-side shrink, sized to the track."""
+        want = (track.size[0] // 4, track.size[1] // 4)
+        if track.small_picture and track.small_alloc == want:
+            return True
+        self._free_small(track)
+        if want[0] < 1 or want[1] < 1:
+            return False
+        lib, dpy = self.lib, self.dpy
+        hw, hh = track.size[0] // 2, track.size[1] // 2
+        track.half_pixmap = lib.x.XCreatePixmap(dpy, self.root, hw, hh, 32)
+        track.half_picture = lib.xr.XRenderCreatePicture(dpy, track.half_pixmap, self.argb, 0, None)
+        track.small_pixmap = lib.x.XCreatePixmap(dpy, self.root, want[0], want[1], 32)
+        track.small_picture = lib.xr.XRenderCreatePicture(dpy, track.small_pixmap, self.argb, 0, None)
+        # As sources, both bigger pictures are read at twice the destination's scale. A
+        # destination pixel's centre (x + .5) lands on 2x + 1, exactly between two source
+        # centres, so bilinear filtering averages a 2x2 block: twice, that's a 4x4 box.
+        half = _scale_transform(2)
+        for picture in (track.picture, track.half_picture):
+            lib.xr.XRenderSetPictureTransform(dpy, picture, byref(half))
+            lib.xr.XRenderSetPictureFilter(dpy, picture, b"bilinear", None, 0)
+        track.small_shm, track.small_image = self._shm_image(*want)
+        track.small_alloc = want
+        return True
+
+    def _shrink(self, track: Track, w: int, h: int) -> bool:
+        """Read back a quarter-size, 4x4-averaged copy of the composed w x h pixels."""
+        lw, lh = w // 4, h // 4  # floor: never averages the target's stale margin
+        if lw < 1 or lh < 1 or not self._ensure_small(track):
+            return False
+        lib, dpy = self.lib, self.dpy
+        lib.xr.XRenderComposite(dpy, PictOpSrc, track.picture, 0, track.half_picture, 0, 0, 0, 0, 0, 0,
+                                2 * lw, 2 * lh)
+        lib.xr.XRenderComposite(dpy, PictOpSrc, track.half_picture, 0, track.small_picture, 0, 0, 0, 0, 0, 0,
+                                lw, lh)
+        if track.small_image is not None:
+            img = track.small_image.contents
+            img.width, img.height, img.bytes_per_line = lw, lh, lw * 4
+            lib.xe.XShmGetImage(dpy, track.small_pixmap, track.small_image, 0, 0, ALL_PLANES)
+            track.small_dims = (lw, lh, lw * 4)
+        else:
+            image = lib.x.XGetImage(dpy, track.small_pixmap, 0, 0, lw, lh, ALL_PLANES, ZPixmap)
+            if not image:
+                return False
+            img = image.contents
+            track.small_fallback = ctypes.create_string_buffer(ctypes.string_at(img.data, img.bytes_per_line * lh))
+            track.small_dims = (lw, lh, img.bytes_per_line)
+            destroy_image(image)
+        return True
+
+    def _capture(self, track: Track, rect: Rect, refresh: bool = True, sharp: bool = True):
+        if (track.rect is not None and contains(track.rect, rect) and (not track.dirty or not refresh)
+                and (track.have_sharp or (track.have_small and not sharp))):
             return self._result(track, rect)
         layers = self._below(track)
         x0, y0, w, h = rect
@@ -692,31 +819,42 @@ class X11Backdrop:
                                         sx - layer.x, sy - layer.y, 0, 0, sx - x0, sy - y0, sw, sh)
                 lib.xr.XRenderFillRectangle(dpy, PictOpAdd, track.picture, byref(self._solid),
                                             sx - x0, sy - y0, sw, sh)
-        if track.image is not None:
+        track.have_small = not sharp and self._shrink(track, w, h)
+        track.have_sharp = not track.have_small
+        if track.have_small:
+            pass  # frosted: the quarter-size copy is all anyone will read
+        elif track.image is not None:
             img = track.image.contents
             img.width, img.height, img.bytes_per_line = w, h, w * 4
             lib.xe.XShmGetImage(dpy, track.pixmap, track.image, 0, 0, ALL_PLANES)
         else:
             image = lib.x.XGetImage(dpy, track.pixmap, 0, 0, w, h, ALL_PLANES, ZPixmap)
             if not image:
+                track.have_sharp = False
+                track.rect = None
                 return None
             img = image.contents
             track.fallback = ctypes.create_string_buffer(ctypes.string_at(img.data, img.bytes_per_line * h))
             track.fallback_stride = img.bytes_per_line
             destroy_image(image)
         track.rect = rect
-        track.dirty = False
+        track.dirty = track.notified = False
         track.generation += 1
+        self._drain_soon()
         return self._result(track, rect)
 
     def _result(self, track: Track, rect: Rect):
-        """(address, w, h, stride, origin_x, origin_y, generation) of the captured rect."""
+        """(address, w, h, stride, origin_x, origin_y, generation, small) of the captured rect."""
         tx, ty, tw, th = track.rect
+        if not track.have_sharp:
+            lw, lh, lstride = track.small_dims
+            small = track.small_shm.shmaddr if track.small_image is not None else ctypes.addressof(track.small_fallback)
+            return (0, tw, th, 0, tx, ty, track.generation, (small, lw, lh, lstride))
         if track.image is not None:
             base, stride = track.shm.shmaddr, tw * 4
         else:
             base, stride = ctypes.addressof(track.fallback), track.fallback_stride
-        return (base, tw, th, stride, tx, ty, track.generation)
+        return (base, tw, th, stride, tx, ty, track.generation, None)
 
     def close(self) -> None:
         for track in list(self.tracks):
@@ -725,3 +863,6 @@ class X11Backdrop:
         if self._watch:
             GLib.source_remove(self._watch)
             self._watch = 0
+        if self._drain_id:
+            GLib.source_remove(self._drain_id)
+            self._drain_id = 0
