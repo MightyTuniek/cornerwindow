@@ -42,6 +42,10 @@ usage: cornerwindow [command]
   reload                   re-read the config files
   agent working|waiting|done|idle [--agent NAME] [--project DIR]
                            what a coding agent is doing (for its hooks; never starts CornerWindow)
+  agent setup [--all --yes | --agent NAME | --remove | --list]
+                           connect coding agents' hooks to the card (a wizard without options)
+  agent statusline [--then CMD]
+                           Claude Code's status line: shows your real limit % on the card
   taskbar show|hide|status the desktop's taskbar (experimental; `show` also works when not running)
   quit                     stop the running instance
   snapshot FILE.png [panel|window]   save what the panel shows (opens it; PNG, offscreen)

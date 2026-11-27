@@ -52,6 +52,9 @@ if [ -f "$DATA_DIR/taskbar.json" ]; then
 fi
 
 say "Removing launcher and autostart"
+if [ -x "$BIN" ]; then
+  "$BIN" agent setup --remove --yes >/dev/null 2>&1 && ok "coding agents' hooks removed" || true
+fi
 rm -f "$BIN" "$AUTOSTART"
 ok "$BIN, $AUTOSTART"
 

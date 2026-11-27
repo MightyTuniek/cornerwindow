@@ -27,12 +27,14 @@ def test_claude_usage_dedupes_streamed_records():
     usages = parse_claude(lines)
     assert [u.tokens for u in usages] == [115, 155]  # input + output + cache writes; reads don't count
     now = dt.datetime(2026, 11, 23, 11, 0, tzinfo=UTC)
-    assert current_window([u.at for u in usages], now) == (dt.datetime(2026, 11, 23, 9, 0, tzinfo=UTC),
-                                                           dt.datetime(2026, 11, 23, 14, 0, tzinfo=UTC))
+    # starts at the first message, not rounded to the hour: 14:10 is the latest it can reset
+    assert current_window([u.at for u in usages], now) == (dt.datetime(2026, 11, 23, 9, 10, tzinfo=UTC),
+                                                           dt.datetime(2026, 11, 23, 14, 10, tzinfo=UTC))
     assert current_window([u.at for u in usages], now + dt.timedelta(hours=4)) is None  # window over
+    assert current_window([u.at for u in usages], dt.datetime(2026, 11, 23, 9, 5, tzinfo=UTC)) is None  # not yet
     # a message after the window ended starts the next one
     times = [dt.datetime(2026, 11, 23, 9, 10, tzinfo=UTC), dt.datetime(2026, 11, 23, 15, 30, tzinfo=UTC)]
-    assert current_window(times, dt.datetime(2026, 11, 23, 16, 0, tzinfo=UTC))[0].hour == 15
+    assert current_window(times, dt.datetime(2026, 11, 23, 16, 0, tzinfo=UTC))[0] == times[1]
 
 
 def test_codex_usage_and_limits():
@@ -606,3 +608,91 @@ def test_herdr_asks_every_running_session(tmp_path, monkeypatch):
     states = agents.herdr_states(run)
     assert asked == [["herdr", "agent", "list"], ["herdr", "--session", "work", "agent", "list"]]
     assert [(r.state, r.project) for r in states] == [("waiting", "app"), ("working", "app")]
+
+
+def test_claude_limits_from_the_status_line(tmp_path):
+    from cornerwindow.platform.agents import Claude, read_limits, record_statusline, statusline_limits, statusline_text
+
+    now = dt.datetime(2026, 11, 23, 12, 0, tzinfo=UTC).timestamp()
+    payload = {"model": {"display_name": "Opus 5.5"}, "workspace": {"current_dir": "/home/me/app"},
+               "rate_limits": {"five_hour": {"used_percentage": 42.4, "resets_at": int(now + 3600)},
+                               "seven_day": {"used_percentage": 61, "resets_at": int(now + 86400)}}}
+    assert statusline_limits(payload)["five_hour"] == {"used": 42.4, "resets_at": now + 3600}
+    assert statusline_limits({}) == {} and statusline_limits({"rate_limits": None}) == {}
+    assert statusline_text(payload) == "Opus 5.5 · app · 5h limit 42% · week 61%"
+    path = tmp_path / ".local/share/cornerwindow/claude-limits.json"
+    assert record_statusline(payload, path, now)
+    assert not record_statusline(payload, path, now + 5)  # unchanged: no write
+    assert not record_statusline({"model": {}}, path, now)  # no limits (an API key): keeps the old ones
+    five, week = read_limits(path, now + 60)
+    assert (five.used_percent, five.window_minutes) == (42.4, 300) and week.window_minutes == 7 * 24 * 60
+    assert five.as_of == dt.datetime.fromtimestamp(now, UTC)
+    assert [l.window_minutes for l in read_limits(path, now + 7200)] == [10080]  # the 5-hour one reset
+    assert read_limits(tmp_path / "missing.json") == []
+    claude = Claude(tmp_path)
+    (tmp_path / ".claude").mkdir()
+    claude.collect(0, now + 60)
+    assert [l.used_percent for l in claude.limits] == [42.4, 61]
+
+
+def test_limit_pace():
+    from cornerwindow.platform.agents import Limit, pace
+
+    now = dt.datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
+    soon = now + dt.timedelta(hours=1)  # 4 of 5 hours gone
+    calm = pace(Limit(40, 300, soon), now)
+    assert round(calm.elapsed, 2) == 0.8 and round(calm.projected) == 50 and calm.runs_out is None
+    # 60% in the first hour: at that pace it's gone 40 minutes from now, long before the reset
+    hot = pace(Limit(60, 300, now + dt.timedelta(hours=4)), now)
+    assert round(hot.projected) == 300 and hot.runs_out == now + dt.timedelta(minutes=40)
+    early = pace(Limit(5, 300, now + dt.timedelta(minutes=290)), now)
+    assert early.projected is None and early.runs_out is None  # 10 minutes in: too early to say
+    assert pace(Limit(5, 0, None), now) is None
+
+
+def test_claude_limits_from_the_desktop_app(tmp_path):
+    """The desktop app's 15-minute readings (no reset times): the window is pinned by where the %
+    rose from 0, at this PC's first message there; the week by where the % fell."""
+    from cornerwindow.platform.agents import best_limits, desktop_limits, read_desktop_samples
+
+    base = dt.datetime(2026, 11, 26, 20, 0, tzinfo=UTC).timestamp()
+    q = 900  # a reading every 15 minutes
+
+    def samples(*fh, sd=(), start=base):
+        return [(start + i * q, float(f), float(sd[i]) if i < len(sd) else 10.0) for i, f in enumerate(fh)]
+
+    rows = samples(0, 0, 4, 9, 14, sd=(30, 2, 3, 4, 5))  # rose between 20:15 and 20:30; the week fell at ~20:07
+    now = base + 4 * q + 60
+    sent = [dt.datetime.fromtimestamp(base + q + 300, UTC)]  # this PC's message at 20:20
+    five, week = desktop_limits(rows, now, sent)
+    assert five.used_percent == 14 and five.resets_at == dt.datetime(2026, 11, 27, 1, 20, tzinfo=UTC)
+    assert five.approx and not five.latest and five.as_of == dt.datetime.fromtimestamp(base + 4 * q, UTC)
+    assert week.used_percent == 5 and week.resets_at == dt.datetime(2026, 12, 3, 20, 7, 30, tzinfo=UTC)
+    # no message from this PC: between the two readings
+    assert desktop_limits(rows, now)[0].resets_at == dt.datetime(2026, 11, 27, 1, 22, 30, tzinfo=UTC)
+    # back at 0%: the next message starts the window
+    rows = samples(9, 14, 0)
+    now = base + 2 * q + 120
+    (five, _week) = desktop_limits(rows, now, [dt.datetime.fromtimestamp(base + 2 * q + 60, UTC)])
+    assert five.used_percent == 0 and five.resets_at == dt.datetime.fromtimestamp(base + 2 * q + 60 + 5 * 3600, UTC)
+    assert desktop_limits(rows, now)[0].resets_at is None  # no message yet: the whole window is there
+    # a gap in the readings (the app was closed): only the latest the week can reset
+    rows = [(base, 1.0, 34.0), (base + 40 * 3600, 2.0, 0.0)]
+    week = desktop_limits(rows, base + 40 * 3600 + 60)[-1]
+    assert week.latest and week.resets_at == dt.datetime.fromtimestamp(base + 40 * 3600 + 7 * 86400, UTC)
+    assert desktop_limits(rows, base + 50 * 3600) == []  # last reading 10 hours old: says nothing now
+    # the file: the account read last, oldest first, empty readings skipped
+    path = tmp_path / "plan-usage-history.json"
+    path.write_text(json.dumps({"version": 2, "samples": [
+        {"t": 2000_000, "org": "a", "u": {"fh": 5, "sd": 7}}, {"t": 1000_000, "org": "a", "u": {"fh": 3, "sd": 6}},
+        {"t": 1500_000, "org": "b", "u": {"fh": 50}}, {"t": 2500_000, "org": "a", "u": {}}]}))
+    assert read_desktop_samples(path) == [(1000.0, 3.0, 6.0), (2000.0, 5.0, 7.0)]
+    assert read_desktop_samples(tmp_path / "missing.json") == []
+    # the newest reading wins, but an exact reset time for the same window beats a worked-out one
+    from cornerwindow.platform.agents import Limit
+
+    old = dt.datetime(2026, 11, 27, 1, 0, tzinfo=UTC)
+    exact = Limit(10, 300, dt.datetime(2026, 11, 27, 5, 0, tzinfo=UTC), old)
+    guessed = Limit(12, 300, dt.datetime(2026, 11, 27, 5, 10, tzinfo=UTC), old + dt.timedelta(minutes=5), approx=True)
+    (best,) = best_limits([exact], [guessed])
+    assert best.used_percent == 12 and best.resets_at == exact.resets_at and not best.approx

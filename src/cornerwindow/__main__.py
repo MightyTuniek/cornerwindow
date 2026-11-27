@@ -56,6 +56,12 @@ def _agent(args: list[str]) -> int:
     often, so this never starts the panel and never loads GTK, and it only fails on bad arguments."""
     import json
 
+    if args[:1] == ["statusline"]:
+        return _statusline(args[1:])
+    if args[:1] == ["setup"]:
+        from .platform.agent_setup import main as setup
+
+        return setup(args[1:])
     from .platform.agents import parse_report
 
     try:
@@ -76,6 +82,36 @@ def _agent(args: list[str]) -> int:
                       GLib.Variant("(sava{sv})", ("agent-report", [GLib.Variant("s", json.dumps(report))], {})))
     except Exception:  # not running, or no session bus: nothing to tell
         pass
+    return 0
+
+
+def _statusline(args: list[str]) -> int:
+    """`cornerwindow agent statusline [--then CMD]` as Claude Code's status line: saves the real
+    5-hour and weekly limit % it is handed for the AI agents card, and prints a short line (or
+    CMD's, fed the same input, to keep a status line you already had)."""
+    import json
+    import subprocess
+
+    from .platform.agents import record_statusline, statusline_text
+
+    raw = sys.stdin.read()
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        payload = {}
+    try:
+        record_statusline(payload)
+    except Exception:  # a status line must always print something
+        pass
+    if args[:1] == ["--then"] and len(args) > 1:
+        try:
+            done = subprocess.run(" ".join(args[1:]), shell=True, input=raw, text=True,
+                                  capture_output=True, timeout=10)
+            sys.stdout.write(done.stdout)
+            return done.returncode
+        except (OSError, subprocess.SubprocessError):
+            return 1
+    print(statusline_text(payload))
     return 0
 
 

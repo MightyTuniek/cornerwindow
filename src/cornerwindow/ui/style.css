@@ -51,6 +51,9 @@ window.cw-window {
 }
 .cw-date { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.72); }
 .cw-agent-working { color: #bf5af2; font-weight: 600; }
+.cw-agent-waiting { color: #ff9f0a; font-weight: 600; }
+.cw-indent { margin-left: 15px; }   /* under an AI agent's name, past its state dot */
+.cw-limit { margin-top: 4px; }
 .cw-event { font-size: 12px; color: rgba(255, 255, 255, 0.55); margin-top: 1px; }
 .cw-light .cw-event { color: rgba(0, 0, 0, 0.5); }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate the README screenshots: scripts/screenshots.sh [panel|glass|commandbar|settings|trigger ...] [--out DIR]
+# Regenerate the README screenshots: scripts/screenshots.sh [panel|glass|commandbar|settings|trigger|agents ...] [--out DIR]
 #
 # Runs the real app in demo mode on a virtual 3840x2160 screen (2x scale) with its own session
 # bus, so it works headless (CI, a cloud container) and never touches a CornerWindow you have

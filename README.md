@@ -29,7 +29,7 @@ The trigger stays almost invisible.
 | Middle-click | Mute output |
 | Right-click | Play or pause media |
 
-**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, a green dot while music plays or the stopwatch runs, a blue dot while a notification is unread or a download is coming in, a purple dot while a coding agent works, and an orange dot when a window asks for attention while the taskbar is hidden.
+**Live activities.** The trigger grows to show an arc and a value when brightness or volume changes. It also shows a ring while a timer runs, a red dot while your mic is muted or your laptop battery is low, a yellow dot while Awake is on, a green dot while music plays or the stopwatch runs, a blue dot while a notification is unread or a download is coming in, a purple dot while a coding agent works (orange when one waits for you), and an orange dot when a window asks for attention while the taskbar is hidden.
 
 **Drop zone.** Drag a file, a link or some text onto the corner: the panel opens on the Shelf so you can park it there and drag it out again later.
 
@@ -53,7 +53,7 @@ The trigger stays almost invisible.
 | Drawer | Timer, stopwatch with laps, clipboard history (text, images, pins), scratchpad, and the Shelf |
 | Command bar | Type to open apps, switch windows, run commands, calculate, convert, and everything in the tools below |
 | Apps | Your favourite and running apps, a taskbar inside the panel (shown while the taskbar is hidden, see below) |
-| Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code, Codex, OpenCode, Gemini CLI, Qwen Code, Copilot CLI, Amp, Droid, pi, Oh My Pi, Grok Build, Kimi, Goose, Cline, Kilo, Hermes and more: tokens and recorded cost today, Claude's 5-hour window, Codex's plan limits, which project an agent works in or waits for you in, from their local logs, their hooks and herdr; Cursor CLI, Aider, Kiro, Auggie, Crush and others without usable logs are found by their running process), **Power** (a card instead of the clock's button) |
+| Off by default | **Weather** (now, the next hours and days), **AI agents** (Claude Code, Codex, OpenCode, Gemini CLI, Qwen Code, Copilot CLI, Amp, Droid, pi, Oh My Pi, Grok Build, Kimi, Goose, Cline, Kilo, Hermes and more: who needs you, your real Claude and Codex plan limits with your pace against the reset, tokens and recorded cost today, which project an agent works in or waits for you in, from their local logs, their hooks and herdr; Cursor CLI, Aider, Kiro, Auggie, Crush and others without usable logs are found by their running process), **Power** (a card instead of the clock's button) |
 
 **More cards than fit.** A column taller than the screen scrolls on its own (the command bar stays put) and fades out at the end that has more; sliders and the calendar keep using the scroll wheel for themselves. The Features page warns about a column that scrolls, and a card you switch on goes to the column with the most room.
 
@@ -148,9 +148,10 @@ The script:
 - Puts `cornerwindow` in `~/.local/bin`.
 - Starts CornerWindow with your session.
 - On GNOME, binds <kbd>Super</kbd>+<kbd>\\</kbd> to open and close it.
+- Asks which coding agents to connect to the AI agents card (`cornerwindow agent setup`, see [Coding agents](#coding-agents)).
 - Runs `cornerwindow doctor` at the end.
 
-Flags: `--no-sudo`, `--no-hotkey`.
+Flags: `--no-sudo`, `--no-hotkey`, `--agents` (connect every agent found without asking), `--no-agents`.
 
 To update, pull the repo and run `./install.sh` again. To remove CornerWindow, run `./uninstall.sh`. It stops the app and removes the launcher, autostart entry, hotkey, udev rule and build cache, and keeps your settings. Add `--purge` to delete those too.
 
@@ -167,6 +168,7 @@ cornerwindow action display.preset.night
 cornerwindow settings display              # open the settings window, optionally on a page
 cornerwindow taskbar show                  # bring the taskbar back (also when CornerWindow isn't running)
 cornerwindow agent waiting --agent claude  # tell the AI agents card (for hooks, see below)
+cornerwindow agent setup                   # connect coding agents' hooks to the AI agents card
 cornerwindow action window.snap.left       # bind actions like this one to keyboard shortcuts
 cornerwindow snapshot ~/panel.png          # a picture of the open panel (drawn offscreen)
 CORNERWINDOW_DEMO=1 cornerwindow           # try it with made-up data (its own instance and settings)
@@ -178,22 +180,51 @@ For the fastest possible hotkey, bind the D-Bus call directly. This is what `./i
 gdbus call --session --dest io.github.cornerwindow --object-path /io/github/cornerwindow --method org.gtk.Actions.Activate toggle [] {}
 ```
 
-### Coding agents' hooks
+### Coding agents
 
-The AI agents card guesses that an agent is working when its log was written in the last 90 seconds (or, for agents it only knows by their process, while the process uses the CPU), and asks [herdr](https://github.com/herdrdev/herdr) when it runs. An agent's own hooks can say it exactly, including when it waits for you: `cornerwindow agent working|waiting|done|idle [--agent NAME] [--project DIR]` (the project defaults to the folder the hook runs in). It returns at once, never starts CornerWindow, and does nothing when it isn't running. Any agent name works; unknown ones get their own row. For Claude Code, in `~/.claude/settings.json`:
+The AI agents card reads coding agents' own logs. On its own it can only guess what they're doing (a log written in the last 90 seconds = working). Their hooks tell it exactly, including when one waits for you, and Claude Code's status line hands over your real 5-hour and weekly limit %. One command sets all of that up:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "cornerwindow agent working --agent claude"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": "cornerwindow agent working --agent claude"}]}],
-    "Notification": [{"hooks": [{"type": "command", "command": "cornerwindow agent waiting --agent claude"}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "cornerwindow agent done --agent claude"}]}]
-  }
-}
+```bash
+cornerwindow agent setup
 ```
 
-For Codex, in `~/.codex/config.toml`: `notify = ["cornerwindow", "agent", "done", "--agent", "codex"]`. Agents you don't want on the card go in `[agents] hide`; `herdr = false` and `processes = false` switch those off.
+In a terminal it's a short wizard: it lists the agents it finds, asks which to connect, whether Claude Code's status line should send your limits (keeping a status line you already have), and whether to switch the card on (it's off by default). `install.sh` runs it for you. The same thing as a plain command, for scripts:
+
+```bash
+cornerwindow agent setup --all --yes --card       # every agent found, no questions, card on
+cornerwindow agent setup --agent claude,codex     # only these
+cornerwindow agent setup --list                   # which agents are found and connected
+cornerwindow agent setup --dry-run                # show what would change
+cornerwindow agent setup --remove --yes           # take it all out again (uninstall.sh does this)
+```
+
+Also `--no-statusline` (leave Claude's status line alone), `--replace-statusline` (use ours instead of yours) and `--no-card`.
+
+| Agent | What setup changes | What the card learns |
+|---|---|---|
+| Claude Code | hooks and `statusLine` in `~/.claude/settings.json` | working, waiting for you, done; real limit % |
+| Codex | `notify` in `~/.codex/config.toml` (skipped if you have your own) | done |
+| Gemini CLI | hooks in `~/.gemini/settings.json` | working, waiting for you, done |
+| OpenCode | a plugin, `~/.config/opencode/plugins/cornerwindow.js` | working, waiting for you, done |
+| Cursor | `~/.cursor/hooks.json` | working, done |
+| Copilot CLI | a hooks file, `~/.copilot/hooks/cornerwindow.json` | working, waiting for you, done |
+| Droid | hooks in `~/.factory/settings.json` | working, waiting for you, done |
+
+Only CornerWindow's own entries are touched (found by their command, so running setup again never adds them twice), the first change to a file keeps a `.cornerwindow-bak` copy, and a file that isn't plain JSON is left alone. Agents read their hooks when they start, so restart sessions that were open.
+
+<p align="center">
+  <img src="docs/screenshots/agents.png" width="350" alt="The AI agents card: Claude Code needs you in a project, with its 5-hour limit 38% used and a tick at 63% of the window, on pace for about 60%; its weekly limit; Oh My Pi working in another project; and Gemini CLI folded into an Also today line">
+</p>
+
+**Reading the card.** Agents that wait for you come first (orange dot), then the ones working (purple), done (green) and just open. A limit's bar fills with how much is used, and the thin tick marks how far through the window you are: fill behind the tick means you're on track, however close the reset is. The line under it says when it resets and where you're headed at your pace so far ("on pace for ~60%", or in orange "runs out ~14:20 at this pace"). **Where Claude's limits come from**, best first:
+
+1. Claude Code's status line in a terminal (after `cornerwindow agent setup`). It gives the exact % and reset times.
+2. The Claude desktop app, which reads your plan usage every 15 minutes into `~/.config/Claude/plan-usage-history.json`. That works for the desktop app's Code tab too, which has no status line. The readings have no reset times, so the card works them out: the 5-hour window starts where the % rose from 0 (at your first message there) and the weekly one resets a week after the % last fell. "Resets ~06:11" means worked out to within a few minutes. "Resets by Tue 22:01" means the app was closed when it happened, so that's only the latest it can be, and the card shows no pace for it.
+3. Neither: a guess from Claude Code's logs on this PC ("5-hour window (estimate)", "resets around..."). Claude on the web or another device shares the window and can move it, so treat it as a rough guide.
+
+The limits are shared with claude.ai, so when the last reading is more than 15 minutes old the card says when it was taken ("as of 13:05"). Agents with nothing going on fold into the last line. The corner's dot is purple while an agent works and orange while one waits for you.
+
+**By hand, for any agent.** The hooks call `cornerwindow agent working|waiting|done|idle [--agent NAME] [--project DIR]` (the project defaults to the folder the hook runs in). It returns at once, never starts CornerWindow, and does nothing when it isn't running. Any agent name works; unknown ones get their own row. [herdr](https://github.com/herdrdev/herdr) is asked too while it runs. As Claude Code's status line, `cornerwindow agent statusline` prints model · folder · 5h limit %; `--then CMD` runs your own status line with the same input and prints its output. Agents you don't want on the card go in `[agents] hide`; `herdr = false` and `processes = false` switch those off.
 
 ## Configuration
 

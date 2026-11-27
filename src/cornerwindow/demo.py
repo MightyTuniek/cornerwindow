@@ -134,6 +134,25 @@ def agent_logs(home: Path) -> None:
                                              "usage": {"input": 3000 + i * 40, "output": 400, "cacheRead": 9000,
                                                        "cacheWrite": 0, "cost": {"total": 0.011 + i * 0.001}}}}))
     (folder / "demo-session.jsonl").write_text("\n".join(lines) + "\n")
+    # a little Gemini CLI this morning (nothing going on now: it lands in "Also today")
+    folder = home / ".gemini" / "tmp" / "demo" / "chats"
+    folder.mkdir(parents=True, exist_ok=True)
+    midnight = now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = max(now - dt.timedelta(hours=3), midnight)  # today, even just after midnight
+    step = min(dt.timedelta(minutes=1), (now - start) / 30)
+    messages = [{"type": "gemini", "id": f"g{i}", "timestamp": (start + step * i).isoformat(),
+                 "model": "gemini-3-pro", "tokens": {"input": 9000, "output": 700, "total": 9700}}
+                for i in range(12)]
+    (folder / "session-demo.json").write_text(json.dumps({"sessionId": "demo", "messages": messages}))
+    stamp = (start + step * 12).timestamp()
+    os.utime(folder / "session-demo.json", (stamp, stamp))  # written then, not just now (= working)
+    # what Claude Code's status line would have saved: 38% of the 5-hour limit, 22% of the week's
+    from .platform.agents import limits_file, record_statusline
+
+    record_statusline({"rate_limits": {
+        "five_hour": {"used_percentage": 38, "resets_at": int((now + dt.timedelta(minutes=110)).timestamp())},
+        "seven_day": {"used_percentage": 22, "resets_at": int((now + dt.timedelta(days=3, hours=5)).timestamp())},
+    }}, limits_file(home))
 
 
 # -- fakes ---------------------------------------------------------------------------------

@@ -4,6 +4,8 @@
 #   ./install.sh               everything (asks for sudo once, for packages + the I²C rule)
 #   ./install.sh --no-sudo     skip everything that needs root
 #   ./install.sh --no-hotkey   don't register the global shortcut
+#   ./install.sh --agents      connect every coding agent found (Claude Code, Codex, ...) without asking
+#   ./install.sh --no-agents   leave coding agents alone (later: cornerwindow agent setup)
 #   ./install.sh --uninstall   same as ./uninstall.sh (see it for --purge)
 #
 # Safe to re-run.
@@ -18,13 +20,15 @@ HOTKEY="${CORNERWINDOW_HOTKEY:-<Super>backslash}"
 KB_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/cornerwindow/"
 TOGGLE_CMD="gdbus call --session --dest io.github.cornerwindow --object-path /io/github/cornerwindow --method org.gtk.Actions.Activate toggle [] {}"
 
-USE_SUDO=1; USE_HOTKEY=1; UNINSTALL=0
+USE_SUDO=1; USE_HOTKEY=1; UNINSTALL=0; AGENTS=ask
 for arg in "$@"; do
   case "$arg" in
     --no-sudo) USE_SUDO=0 ;;
     --no-hotkey) USE_HOTKEY=0 ;;
+    --agents) AGENTS=all ;;
+    --no-agents) AGENTS=none ;;
     --uninstall) UNINSTALL=1 ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option $arg"; exit 2 ;;
   esac
 done
@@ -190,6 +194,17 @@ PY
 elif [ "$USE_HOTKEY" = 1 ]; then
   warn "not GNOME: bind this command to a key in your desktop's settings:"
   echo "      $TOGGLE_CMD"
+fi
+
+# ── 5b. coding agents (their hooks tell the AI agents card what they're doing) ──
+if [ "$AGENTS" = all ]; then
+  say "Coding agents"
+  "$BIN" agent setup --all --yes --card || warn "some agents were left alone (see above)"
+elif [ "$AGENTS" = ask ] && [ -t 0 ] && [ -t 1 ]; then
+  "$BIN" agent setup || warn "some agents were left alone (see above)"
+elif [ "$AGENTS" = ask ]; then
+  say "Coding agents"
+  "$BIN" agent setup --list || true
 fi
 
 # ── 6. start + check ────────────────────────────────────────────────────────

@@ -48,6 +48,9 @@ class Limit:
     used_percent: float
     window_minutes: int
     resets_at: dt.datetime | None
+    as_of: dt.datetime | None = None  # when the tool last told us (None = just now, from its log)
+    approx: bool = False  # resets_at worked out by us (to a few minutes), not told
+    latest: bool = False  # resets_at is only the latest it can reset (the readings have a gap)
 
 
 # -- small helpers -------------------------------------------------------------------------

@@ -159,8 +159,10 @@ src/cornerwindow/
     processes.py    /proc: busiest processes, listening ports, stopping a process
     updates.py      apt / dnf / pacman / Flatpak / Snap update counts
     agents.py       coding agents' usage: one Source class per agent (where its logs are, how to read them
-                    incrementally), hook reports, herdr, process detection
+                    incrementally), hook reports, herdr, process detection, Claude's limits from its status
+                    line (`record_statusline`/`read_limits`) and a limit's pace
     agent_formats.py  each agent's log format as pure parsers (checked against ccusage's adapters)
+    agent_setup.py  `cornerwindow agent setup`: each agent's hook config (one Integration per agent), the wizard
     backdrop/       what's behind our windows, for Liquid Glass (live X11 compositing, wallpaper)
     clipboard.py    clipboard access
   native/           glass.c, the Liquid Glass pixel kernel (built with cc on first use)

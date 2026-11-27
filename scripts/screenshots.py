@@ -7,7 +7,7 @@ Run it through scripts/screenshots.sh, which provides the virtual screen and ses
     scripts/screenshots.sh panel glass      # only these
     scripts/screenshots.sh --out /tmp/shots # somewhere else
 
-Pictures: panel, glass, commandbar, settings, trigger. Each scene opens the real panel with the
+Pictures: panel, glass, commandbar, settings, trigger, agents. Each scene opens the real panel with the
 demo's made-up data (src/cornerwindow/demo.py), waits for the springs to settle and draws the
 windows offscreen over the demo wallpaper (src/cornerwindow/ui/snapshot.py), at 2x scale.
 To add a picture, add a scene function below and list it in SCENES.
@@ -89,6 +89,38 @@ def scene_settings(app, out: Path):
     yield 1.2
 
 
+def scene_agents(app, out: Path):
+    """The AI agents card (off by default, so it's switched on for the picture), with Claude
+    waiting for you and Oh My Pi at work."""
+    from cornerwindow.platform.agents import REPORTS
+    from cornerwindow.ui import snapshot
+
+    base = app.config.base.get("modules", {}).get("columns")
+    columns = [list(c) for c in app.config.get("modules.columns")]
+    columns[0].insert(0, "agents")
+    app.writer.set("modules", "columns", columns, base)
+    app.schedule_reload(delay=10)
+    REPORTS.update("claude", "waiting", "cornerwindow")
+    REPORTS.update("omp", "working", "website")
+    yield 1.5  # the config reload
+    app.island.open()
+    yield SETTLE + 1.0  # and the card's first read of the logs
+    card = app.host.instances["agents"].card
+    island = app.island
+    x, y = card.translate_coordinates(island, 0, 0)
+    ox, oy = snapshot.origin(island)
+    pad = 10
+    save(app, out / "agents.png", crop=(ox + x - pad, oy + y - pad, card.get_allocated_width() + 2 * pad,
+                                        card.get_allocated_height() + 2 * pad))
+    app.island.close()
+    yield 0.8
+    REPORTS.update("claude", "idle", "cornerwindow")
+    REPORTS.update("omp", "idle", "website")
+    app.writer.set("modules", "columns", base, base)
+    app.schedule_reload(delay=10)
+    yield 1.5
+
+
 def scene_trigger(app, out: Path):
     """Four states of the collapsed corner side by side, with captions."""
     import cairo
@@ -142,7 +174,7 @@ def scene_trigger(app, out: Path):
 
 
 SCENES = {"panel": scene_panel, "glass": scene_glass, "commandbar": scene_commandbar,
-          "settings": scene_settings, "trigger": scene_trigger}
+          "settings": scene_settings, "trigger": scene_trigger, "agents": scene_agents}
 
 
 # -- helpers -------------------------------------------------------------------------------
@@ -249,6 +281,7 @@ def main() -> int:
     os.environ["CORNERWINDOW_DEMO"] = "1"
     os.environ.setdefault("CORNERWINDOW_DEMO_HOME", tempfile.mkdtemp(prefix="cornerwindow-demo-"))
     os.environ.setdefault("GDK_SCALE", "2")
+    os.environ["LC_TIME"] = "C.UTF-8"  # "Resets Mon 09:00" in English, whatever this machine speaks
     os.environ.setdefault("NO_AT_BRIDGE", "1")
     names = args.names or list(SCENES)
     status = run(names, args.out.resolve())

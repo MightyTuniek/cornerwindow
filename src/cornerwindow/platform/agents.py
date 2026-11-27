@@ -35,8 +35,15 @@ Which agent is *working* comes from, best first: states the agents report themse
 (`cornerwindow agent working|waiting|done`, from their hooks, see `AgentReports`), herdr's live
 agent list, and failing both a log written in the last ACTIVE_SECONDS (or a busy process).
 
-Claude's plan limits are counted in 5-hour windows that start with your first message after a
-break (rounded down to the hour, the way usage tools such as ccusage count them); Codex writes
+Claude's real plan limits (the 5-hour and weekly percentages) are only known to Claude Code
+itself, which hands them to its status line: `cornerwindow agent statusline` as the status line
+command saves them (`record_statusline`), and the Claude source reads them back. The desktop
+app's Code tab runs no status line, but the app itself reads your plan usage every 15 minutes
+into ~/.config/Claude/plan-usage-history.json (`desktop_limits`; no reset times, so they're
+worked out from where the % rose and fell). Without either, the 5-hour window is estimated from this PC's
+messages, and only as an upper bound: the real window may have started earlier, with use on
+claude.ai or another device, but it can't reset later than 5 hours after a message it contains.
+(Rounding the start down to the hour, as some usage tools do, is wrong both ways.) Codex writes
 its own limit percentages into the log.
 """
 
@@ -84,12 +91,13 @@ class AgentSummary:
 
 
 def current_window(times: list[dt.datetime], now: dt.datetime) -> tuple[dt.datetime, dt.datetime] | None:
-    """The 5-hour window `now` falls in, or None when the last one has ended. A window starts at the
-    first message after the previous window ended, rounded down to the hour."""
+    """The 5-hour window `now` falls in, as seen from these messages, or None when it has ended:
+    it starts at the first message after the previous one ended. The real window may have started
+    earlier (use elsewhere), so the end is the latest it can reset, not when it will."""
     start = end = None
-    for at in sorted(times):
+    for at in sorted(t for t in times if t <= now):
         if end is None or at >= end:
-            start = at.replace(minute=0, second=0, microsecond=0)
+            start = at
             end = start + WINDOW
     if start is None or now >= end:
         return None
@@ -427,6 +435,13 @@ class Claude(FileSource):
     env, roots = "CLAUDE_CONFIG_DIR", (".claude", "$CONFIG/claude")
     globs = ("projects/*/*.jsonl", "projects/*/*/subagents/*.jsonl")  # subagents write their own logs
     window, policy = True, "max"
+
+    def collect(self, since, now):
+        usages, working = super().collect(since, now)
+        line = read_limits(limits_file(self.home), now)  # from the status line, if it's set up
+        desktop = desktop_limits(read_desktop_samples(desktop_file(self.home)), now, [u.at for u in usages])
+        self.limits = best_limits(line, desktop)
+        return usages, working
 
     def parse(self, entry, lines):
         entry["items"] += parse_claude(lines)
@@ -1321,6 +1336,195 @@ def parse_herdr(text: str) -> list[Report]:
     return out
 
 
+# -- Claude's real limits, from its status line ---------------------------------------------
+LIMIT_WINDOWS = {"five_hour": 5 * 60, "seven_day": 7 * 24 * 60}
+
+
+def limits_file(home: Path | None = None) -> Path:
+    home = home or Path.home()
+    data = Path(os.environ.get("XDG_DATA_HOME") or home / ".local/share")
+    return data / "cornerwindow" / "claude-limits.json"
+
+
+def statusline_limits(payload) -> dict:
+    """The limits in Claude Code's status line input: {"five_hour": {"used": 42.0, "resets_at":
+    epoch seconds}, "seven_day": ...}. Empty when it has none (API keys, Bedrock, no message yet)."""
+    rates = payload.get("rate_limits") if isinstance(payload, dict) else None
+    out = {}
+    for name in LIMIT_WINDOWS:
+        rate = rates.get(name) if isinstance(rates, dict) else None
+        if not isinstance(rate, dict) or not isinstance(rate.get("used_percentage"), (int, float)):
+            continue
+        resets = _time(rate.get("resets_at"))
+        out[name] = {"used": float(rate["used_percentage"]), "resets_at": resets.timestamp() if resets else None}
+    return out
+
+
+def record_statusline(payload, path: Path | None = None, now: float | None = None) -> bool:
+    """Save the limits in a status line input for the card. Status lines refresh often, so this
+    writes only when a value changed (or every minute, to say they're still current)."""
+    limits = statusline_limits(payload)
+    if not limits:
+        return False
+    path = path or limits_file()
+    now = time.time() if now is None else now
+    try:
+        old = json.loads(path.read_text())
+        if old.get("limits") == limits and now - float(old.get("at", 0)) < 60:
+            return False
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"at": now, "limits": limits}))
+        tmp.replace(path)
+    except OSError:
+        return False
+    return True
+
+
+def read_limits(path: Path, now: float | None = None) -> list[Limit]:
+    """The saved limits whose window hasn't reset yet (after a reset the old % means nothing)."""
+    now = time.time() if now is None else now
+    try:
+        data = json.loads(path.read_text())
+        limits, at = data["limits"], float(data["at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    out = []
+    for name, minutes in LIMIT_WINDOWS.items():
+        rate = limits.get(name) if isinstance(limits, dict) else None
+        if not isinstance(rate, dict) or not rate.get("resets_at") or float(rate["resets_at"]) <= now:
+            continue
+        stamp = dt.datetime.fromtimestamp
+        out.append(Limit(float(rate.get("used", 0)), minutes, stamp(float(rate["resets_at"]), dt.timezone.utc),
+                         stamp(at, dt.timezone.utc)))
+    return out
+
+
+def desktop_file(home: Path | None = None) -> Path:
+    """The Claude desktop app checks your plan usage every 15 minutes and keeps the readings here."""
+    home = home or Path.home()
+    return Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config") / "Claude" / "plan-usage-history.json"
+
+
+def read_desktop_samples(path: Path) -> list[tuple[float, float, float | None]]:
+    """[(epoch seconds, 5-hour %, weekly %)], oldest first, for the account read last."""
+    try:
+        samples = json.loads(path.read_text()).get("samples") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    samples = [s for s in samples if isinstance(s, dict) and isinstance(s.get("u"), dict)
+               and isinstance(s["u"].get("fh"), (int, float)) and isinstance(s.get("t"), (int, float))]
+    if not samples:
+        return []
+    org = max(samples, key=lambda s: s["t"]).get("org")
+    out = [(s["t"] / 1000, float(s["u"]["fh"]), float(s["u"]["sd"]) if isinstance(s["u"].get("sd"), (int, float))
+            else None) for s in samples if s.get("org") == org]
+    return sorted(out)
+
+
+def desktop_limits(samples, now: float, messages: list[dt.datetime] = ()) -> list[Limit]:
+    """Limits from the desktop app's readings. They carry no reset time, so it's worked out: the
+    5-hour window starts where the % rose from 0 (at your first message in that gap, when this PC
+    sent one) and resets 5 hours later; the weekly one resets a week after the % last fell."""
+    if not samples or now - samples[-1][0] > WINDOW.total_seconds():
+        return []  # the app hasn't run for a while: the 5-hour reading means nothing now
+    stamp = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc)  # noqa: E731
+    sent = sorted(m.timestamp() for m in messages)
+    at, five, week = samples[-1]
+    window = WINDOW.total_seconds()
+    out = []
+    if five > 0:
+        k = len(samples) - 1  # back to the first reading of this window
+        while k > 0 and 0 < samples[k - 1][1] <= samples[k][1] and samples[k][0] - samples[k - 1][0] < window:
+            k -= 1
+        hi = samples[k][0]
+        lo = samples[k - 1][0] if k > 0 and hi - samples[k - 1][0] < window else hi - window
+        start = next((t for t in sent if lo < t <= hi), None)
+        latest = False
+        if start is None:  # nothing from this PC then: somewhere between the two readings
+            start, latest = ((lo + hi) / 2, False) if hi - lo <= 3600 else (hi, True)
+        if start + window > now:
+            out.append(Limit(five, 300, stamp(start + window), stamp(at), approx=True, latest=latest))
+    else:  # 0% at the last reading: a window starts with the next message
+        start = next((t for t in sent if at < t and now - t < window), None)
+        out.append(Limit(0.0, 300, stamp(start + window) if start else None, stamp(at), approx=True))
+    if week is not None:
+        resets, latest = None, False
+        for j in range(len(samples) - 1, 0, -1):  # the weekly limit resets at the same time every week
+            before, after = samples[j - 1], samples[j]
+            if before[2] is not None and after[2] is not None and after[2] < before[2]:
+                close = after[0] - before[0] <= 3600
+                resets, latest = ((before[0] + after[0]) / 2, False) if close else (after[0], True)
+                while resets <= now:
+                    resets += 7 * 86400
+                break
+        out.append(Limit(week, 7 * 24 * 60, stamp(resets) if resets else None, stamp(at), approx=True,
+                         latest=latest))
+    return out
+
+
+def best_limits(*sources: list[Limit]) -> list[Limit]:
+    """One limit per window, from the newest reading; an exact reset time from another source for
+    the same window wins over a worked-out one."""
+    by_window: dict[int, list[Limit]] = {}
+    for limit in (lim for source in sources for lim in source):
+        by_window.setdefault(limit.window_minutes, []).append(limit)
+    far = dt.datetime.max.replace(tzinfo=dt.timezone.utc)
+    out = []
+    for minutes in sorted(by_window):
+        found = by_window[minutes]
+        best = max(found, key=lambda lim: lim.as_of or far)
+        if best.approx:
+            exact = [lim for lim in found if not lim.approx and lim.resets_at and best.resets_at
+                     and abs((lim.resets_at - best.resets_at).total_seconds()) < 1800]
+            if exact:
+                best = Limit(best.used_percent, minutes, exact[0].resets_at, best.as_of)
+        out.append(best)
+    return out
+
+
+def statusline_text(payload) -> str:
+    """What `cornerwindow agent statusline` prints in Claude Code: model, folder, 5-hour limit."""
+    payload = payload if isinstance(payload, dict) else {}
+    model = (payload.get("model") or {}).get("display_name") or ""
+    folder = (payload.get("workspace") or {}).get("current_dir") or payload.get("cwd") or ""
+    parts = [model, Path(folder).name if folder else ""]
+    limits = statusline_limits(payload)
+    if "five_hour" in limits:
+        parts.append(f"5h limit {limits['five_hour']['used']:.0f}%")
+    if limits.get("seven_day", {}).get("used", 0) >= 50:  # the weekly one only once it matters
+        parts.append(f"week {limits['seven_day']['used']:.0f}%")
+    return " · ".join(p for p in parts if p)
+
+
+@dataclass
+class Pace:
+    elapsed: float  # how far through the window we are, 0..1
+    projected: float | None  # % used by the reset at the pace so far (None = too early to say)
+    runs_out: dt.datetime | None  # when 100% comes at that pace, if before the reset
+
+
+def pace(limit: Limit, now: dt.datetime) -> Pace | None:
+    """Usage against time in a limit's window: the % alone says nothing about whether you'll
+    make it to the reset."""
+    if limit.resets_at is None or not limit.window_minutes or limit.latest:
+        return None  # (from a reset we only bound, any pace would be made up)
+    window = limit.window_minutes * 60
+    left = (limit.resets_at - now).total_seconds()
+    elapsed = max(0.0, min(1.0, 1 - left / window))
+    if elapsed < 0.1 or limit.used_percent <= 0:  # the first half hour of five says little
+        return Pace(elapsed, None, None)
+    projected = limit.used_percent / elapsed
+    runs_out = None
+    if projected > 100 and limit.used_percent < 100:
+        start = limit.resets_at - dt.timedelta(seconds=window)
+        runs_out = start + dt.timedelta(seconds=window * elapsed * 100 / limit.used_percent)
+    return Pace(elapsed, projected, runs_out)
+
+
 # -- putting it together -------------------------------------------------------------------
 class AgentUsage:
     def __init__(self, home: Path | None = None, reports: AgentReports | None = None,
@@ -1349,7 +1553,7 @@ class AgentUsage:
     def summaries(self, now: dt.datetime | None = None) -> list[AgentSummary]:
         now = now or dt.datetime.now().astimezone()
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        since = min(midnight, now - WINDOW).timestamp()
+        since = min(midnight, now - 2 * WINDOW).timestamp()  # enough to see where the window chain starts
         states = [r for r in self.states() if _norm(r.agent) not in self.hidden]
         sources = self.shown()
         scanned = None
